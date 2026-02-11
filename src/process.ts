@@ -1,6 +1,8 @@
 import { exec, spawn } from "child_process";
-import { logger } from "./logger";
+import { HIGHLIGHT, logger } from "./logger";
 import { plural } from "./utils";
+
+const { brightCyan, brightGreen, cyan, magenta, yellow } = HIGHLIGHT;
 
 export interface SpawnOptions {
     ignoreFail?: boolean;
@@ -8,7 +10,7 @@ export interface SpawnOptions {
 
 const callExit: typeof process.exit = (code) => {
     lastExitCode = code ?? null;
-    logger.debug(`<exit>:`, code);
+    logger.debug(`${magenta`<exit>`} ${brightCyan(code)}`);
     const nCode = Number(lastExitCode);
     return process.exit(Number.isInteger(nCode) ? nCode : null);
 };
@@ -17,23 +19,23 @@ const onExit = (code: number) => {
     const actualCode = lastExitCode ?? code;
     const time = ((performance.now() - startTime) << 0) / 1000;
     const logs = [
-        `exit code`,
-        actualCode,
-        `received: terminating process (total time:`,
-        time,
-        `s)`,
+        `exit code ${brightCyan(actualCode)} received: terminating process (total time: ${yellow(
+            time
+        )}s)`,
     ];
     if (children.length) {
-        logs.push(`and`, children.length, `child ${plural("process", children.length, "es")}`);
-        while (children.length) {
-            children.pop()!.kill();
+        logs.push(
+            `and ${yellow(children.length)} child ${plural("process", children.length, "es")}`
+        );
+        for (const child of children) {
+            child.kill();
         }
     }
 
     logger.debug(...logs);
     if (actualCode) {
-        logger.info(`process terminated with code`, actualCode);
-    } else {
+        logger.info(`process terminated with code ${brightCyan(actualCode)}`);
+    } else if (children.length) {
         logger.info(`process ended`);
     }
 };
@@ -44,17 +46,9 @@ let startTime = performance.now();
 
 export async function $(...args: Parameters<typeof String.raw>): Promise<string> {
     const command = String.raw(...args);
-    logger.debug("<exec>:", command);
+    logger.debug(`${magenta`<exec>`} ${cyan(command)}`);
     return new Promise((resolve, reject) => {
         exec(command, (error, stdout, stderr) => {
-            if (
-                stderr &&
-                command.trim().startsWith("wget") &&
-                !stderr.toLowerCase().includes("error")
-            ) {
-                logger.debug(stderr);
-                stderr = "";
-            }
             if (error || stderr) {
                 reject(error || stderr);
             } else {
@@ -76,9 +70,9 @@ export function listenOnCloseEvents() {
 }
 
 export function spawnProcess(args: string[], options?: SpawnOptions) {
-    logger.debug("<spawn>", ...args);
     const { ignoreFail } = options || {};
     const command = args.shift() || "";
+    logger.debug(`${magenta`<spawn>`} ${brightGreen(command)} ${cyan(...args)}`);
     const child = spawn(command, args, { stdio: ignoreFail ? "pipe" : "inherit" });
     child.stdout?.on("data", logger.info);
     const log = ignoreFail ? logger.info : logger.error;

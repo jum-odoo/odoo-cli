@@ -1,4 +1,4 @@
-import { readdir, stat } from "fs/promises";
+import { access, mkdir, readdir, readFile, stat, writeFile } from "fs/promises";
 import { join } from "path";
 import { type Command } from "./command";
 import {
@@ -6,13 +6,15 @@ import {
     ADDON_PATHS,
     BIN_PATH,
     COMMUNITY_PATH,
+    LOCAL_HOST,
     LocalError,
     MANIFEST_FILE_NAME,
     R_VALID_MODULE_NAME,
 } from "./constants";
-import { logger } from "./logger";
+import { HIGHLIGHT, type Highlighter, logger } from "./logger";
 import { $, spawnProcess } from "./process";
-import { disable, enable, reload } from "./tooling";
+
+const { brightMagenta, brightYellow, brightRed } = HIGHLIGHT;
 
 export type Resolver<T> = T | (() => T | PromiseLike<T>);
 
@@ -57,49 +59,10 @@ async function getValidAddons() {
     return values.flat();
 }
 
-function warnError(error: any) {
-    return logger.warn(formatError(error));
-}
-
-async function _drop(command: Command, args: string[]) {
-    const dbNames = command.options.database.values;
-    await Promise.all(dbNames.map((dbName) => $`dropdb -f ${dbName}`.catch(warnError)));
-}
-
-async function _start(command: Command, args: string[]) {
-    const [port] = command.options.port.values;
-    spawnProcess(["python3", BIN_PATH, ...args]);
-    if (command.options.login) {
-        const login = command.options.login.values.join(" ");
-        setTimeout(async () => {
-            const getResponse = await fetch(`${LOCAL_HOST}:${port}/web/login`, { method: "GET" });
-            const text = await getResponse.text();
-            const csrfToken = getCsrfTokenFromHtml(text);
-            const data = new FormData();
-            data.set("login", login);
-            data.set("password", login);
-            data.set("csrf_token", csrfToken);
-            data.set("type", "password");
-            data.set("redirect", "/odoo");
-            logger.debug("Sending login request with:", Object.fromEntries(data.entries()));
-            const postResponse = await fetch(`${LOCAL_HOST}:${port}/web/login`, {
-                method: "POST",
-                body: data,
-                headers: getResponse.headers,
-            });
-            logger.info(postResponse);
-        }, 1000);
-    }
-    if (command.options.open) {
-        const [port] = command.options.port.values;
-        await $`open ${LOCAL_HOST}:${port}/web?debug=assets`;
-    }
-}
-
-const DOUBLE_QUOTES = `"`;
-const LOCAL_HOST = "http://127.0.0.1";
-const SINGLE_QUOTE = "'";
-const BACKTICK = "`";
+// Weights used in the Levenshtein matrix
+const LVD_REPLACE: number = 1.5;
+const LVD_INSERT: number = 1;
+const LVD_DELETE: number = 1;
 
 const R_BRANCH_DATABASE = /^(\d+\.\d|saas-\d+\.\d|master)/;
 const R_CSRF_TOKEN = /csrf_token\s*:\s*['"`](?<token>\w+)['"`]/im;
@@ -107,35 +70,26 @@ const R_WHITE_SPACE = /\s+/g;
 
 const registeredModules: Record<string, string[]> = Object.create(null);
 
-export async function create(command: Command, args: string[]) {
-    const dbName = command.options.database.values.join(" ");
-    logger.info(
-        `creating new database "${dbName}" (${
-            command.options.start ? "with" : "without"
-        } auto-start)`
-    );
-    // Drop
-    await _drop(command, args);
-    if (command.options.start) {
-        // Autostart
-        _start(command, args);
-    } else {
-        // Create
-        await $`createdb ${dbName}`.catch(warnError);
+export async function dropDatabase(command: Command, args: string[]) {
+    const dbNames = command.options.database.values;
+    await Promise.all(dbNames.map((dbName) => $`dropdb -f ${dbName}`.catch(warnError)));
+}
+
+export async function ensureDirectory(path: string) {
+    try {
+        await access(path);
+    } catch {
+        await mkdir(path);
     }
 }
 
-export async function database(command: Command, args: string[]) {
-    const [port] = command.options.port.values;
-    _start(command, args);
-    logger.info("Opening database manager");
-    await $`open ${LOCAL_HOST}:${port}/web/database/manager`;
-}
-
-export async function drop(command: Command, args: string[]) {
-    const dbNames = command.options.database.values.map(stringify);
-    logger.info(`dropping ${plural("database", dbNames.length)} ${dbNames.join(", ")}`);
-    await _drop(command, args);
+export async function ensureFile(path: string, callback: () => string | Promise<string>) {
+    try {
+        await readFile(path, "utf-8");
+    } catch {
+        const content = await callback();
+        await writeFile(path, content, "utf-8");
+    }
 }
 
 export function formatError(error: Error | string | null) {
@@ -159,6 +113,67 @@ export function formatError(error: Error | string | null) {
         .join("\n");
 }
 
+export function getErrorMessageWithHelp(
+    label: string,
+    terms: string[],
+    availableTerms: Iterable<string>,
+    suggestionColor: Highlighter
+) {
+    const closests = new Set<string>();
+    let closestDistance = 2;
+    for (const term of terms) {
+        for (const existingName of availableTerms) {
+            const distance = levenshtein(term, existingName);
+            if (distance > closestDistance) {
+                continue;
+            }
+            if (distance < closestDistance) {
+                closestDistance = distance;
+                closests.clear();
+            }
+            closests.add(existingName);
+        }
+    }
+    const baseMessage = `unknown ${label}: ${terms.map((t) => brightRed(t)).join(", ")}.`;
+    if (!closests.size) {
+        return baseMessage;
+    }
+    const suggestions = [];
+    for (const closest of closests) {
+        suggestions.push(suggestionColor(closest));
+    }
+    return baseMessage + ` Did you mean ${suggestions.join(" or ")}?`;
+}
+
+export const levenshtein = (a: string, b: string): number => {
+    // One of the strings is empty => requires otherstring.length mutations
+    if (!a.length || !b.length) {
+        return (b || a).length;
+    }
+    if (a === b) {
+        return 0;
+    }
+    const matrix: number[][] = [];
+    // Assign first row and column
+    for (let row = 0; row <= a.length; matrix[row] = [row++]);
+    for (let col = 0; col <= b.length; matrix[0][col] = col++);
+    // Fills the rest of the matrix
+    for (let row = 1; row <= a.length; row++) {
+        for (let col = 1; col <= b.length; col++) {
+            matrix[row][col] =
+                a[row - 1] === b[col - 1]
+                    ? matrix[row - 1][col - 1]
+                    : Math.min(
+                          matrix[row - 1][col - 1] + LVD_REPLACE,
+                          matrix[row][col - 1] + LVD_INSERT,
+                          matrix[row - 1][col] + LVD_DELETE
+                      );
+        }
+    }
+    // Minimal distance is the last element
+    return matrix[a.length][b.length];
+};
+
 export async function parseAddons(addonsValue: string[]) {
     const addons: string[] = [];
     const invalidAddons = [];
@@ -179,10 +194,13 @@ export async function parseAddons(addonsValue: string[]) {
         }
     }
     if (invalidAddons.length) {
-        logger.info(registeredModules);
-        throw new LocalError(
-            `Invalid addons: ${invalidAddons.map((addon) => JSON.stringify(addon)).join(", ")}`
+        const errorMessage = getErrorMessageWithHelp(
+            "addons",
+            invalidAddons,
+            validAddons,
+            brightYellow
         );
+        throw new LocalError(errorMessage);
     }
     return addons;
 }
@@ -195,44 +213,47 @@ export function resolve<T>(value: Resolver<T>): T | Promise<T> {
     return typeof value === "function" ? (value as () => T | Promise<T>)() : value;
 }
 
-export async function start(command: Command, args: string[]) {
+export async function startServer(command: Command, args: string[]) {
+    spawnProcess(["python3", BIN_PATH, ...args]);
+    const [port] = command.options["http-port"].values || [];
+    // TODO: not working :(
+    // if (command.options.login) {
+    //     const login = command.options.login.values.join(" ");
+    //     setTimeout(async () => {
+    //         const getResponse = await fetch(`${LOCAL_HOST}:${port}/web/login`, { method: "GET" });
+    //         const text = await getResponse.text();
+    //         const csrfToken = getCsrfTokenFromHtml(text);
+    //         const data = new FormData();
+    //         data.set("login", login);
+    //         data.set("password", login);
+    //         data.set("csrf_token", csrfToken);
+    //         data.set("type", "password");
+    //         data.set("redirect", "/odoo");
+    //         logger.debug("Sending login request with:", Object.fromEntries(data.entries()));
+    //         const postResponse = await fetch(`${LOCAL_HOST}:${port}/web/login`, {
+    //             method: "POST",
+    //             body: data,
+    //             headers: getResponse.headers,
+    //         });
+    //         logger.info(postResponse);
+    //     }, 1000);
+    // }
+    if (command.options.open) {
+        await $`open ${LOCAL_HOST}:${port}/web?debug=assets`;
+    }
+}
+
+export async function startServerFromCommand(command: Command, args: string[]) {
     const dbName = command.options.database.values.join(" ");
-    logger.info(`starting database "${dbName}"`);
-    _start(command, args);
-}
-
-export function stringify(value: any) {
-    const strValue = String(value);
-    if (strValue.includes(DOUBLE_QUOTES)) {
-        if (strValue.includes(SINGLE_QUOTE)) {
-            return BACKTICK + strValue + BACKTICK;
-        }
-        return SINGLE_QUOTE + strValue + SINGLE_QUOTE;
-    }
-    return DOUBLE_QUOTES + strValue + DOUBLE_QUOTES;
-}
-
-export async function tooling(command: Command, args: string[]) {
-    const mode = command.options.mode.values.join(" ");
-    switch (mode) {
-        case "disable":
-        case "off": {
-            await disable();
-            break;
-        }
-        case "enable":
-        case "on": {
-            await enable();
-            break;
-        }
-        default: {
-            await reload();
-            break;
-        }
-    }
+    logger.info(`starting database ${brightYellow(dbName)}`);
+    startServer(command, args);
 }
 
 export async function getDefaultDbName() {
     const branch = await $`cd ${COMMUNITY_PATH} && git rev-parse --abbrev-ref HEAD`;
     return [branch.match(R_BRANCH_DATABASE)?.[1] || "dev"];
+}
+
+export function warnError(error: any) {
+    return logger.warn(formatError(error));
 }

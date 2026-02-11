@@ -1,5 +1,5 @@
 import { Command } from "../command";
-import { start } from "../utils";
+import { startServerFromCommand } from "../utils";
 
 Command.register({
     name: "test",
@@ -8,12 +8,16 @@ Command.register({
         "*",
         {
             tags: {
-                alt: ["tag", "test-tags", "test-tag"],
                 flag: "--test-tags",
+                short: "tag",
                 required: true,
+                help: [
+                    "Comma-separated list of specs to filter which tests to execute. Enable unit tests if set",
+                ],
             },
         },
     ],
     defaultOption: "tags",
-    handler: start,
+    handler: startServerFromCommand,
+    help: ["Run Python tests"],
 });

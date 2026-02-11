@@ -1,16 +1,17 @@
 import { Command } from "../command";
-import { start } from "../utils";
+import { startServerFromCommand } from "../utils";
 
 Command.register({
     name: "shell",
-    alt: ["sh"],
+    alias: "sh",
     defaultArgs: ["shell"],
     options: [
         "*",
         {
-            port: { defaultValues: ["8070"] },
+            ["http-port"]: { defaultValues: ["8070"] },
         },
     ],
     defaultOption: "addons",
-    handler: start,
+    handler: startServerFromCommand,
+    help: ["Opens the database Python environment in CLI"],
 });

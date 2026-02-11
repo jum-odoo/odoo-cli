@@ -1,11 +1,11 @@
 import { Command } from "./command";
 import { LocalError, R_FULL_MATCH, R_SHORT_MATCH } from "./constants";
-import { logger } from "./logger";
-
-import "./commands/index";
+import { HIGHLIGHT, logger } from "./logger";
 import { $, listenOnCloseEvents } from "./process";
 
-const main = async () => {
+import "./commands/index";
+
+async function main() {
     listenOnCloseEvents();
 
     const processArgs = process.argv.slice(2).flatMap((arg) => arg.split("="));
@@ -13,18 +13,16 @@ const main = async () => {
 
     await command.processOptions();
 
-    logger.debug("debug logs active");
-
     // If the command requires a port: cleans up the given port
-    if (command.options.port) {
-        await stopProcessesOnPorts(command.options.port.values);
+    if (command.options["http-port"]) {
+        await stopProcessesOnPorts(command.options["http-port"].values);
     }
 
     // Run command
     await command.run();
-};
+}
 
-const parseArguments = (args: string[]) => {
+function parseArguments(args: string[]) {
     const remainingValues: string[] = [];
     const command = Command.find(args);
     for (const arg of args) {
@@ -36,7 +34,7 @@ const parseArguments = (args: string[]) => {
                 command.registerOption(shortOption, "short");
             }
         } else {
-            const lastOption = command.lastOption;
+            const lastOption = Object.values(command.options).at(-1);
             if (lastOption?.acceptsValues) {
                 lastOption.addValues(arg);
             } else {
@@ -48,16 +46,18 @@ const parseArguments = (args: string[]) => {
         if (!command.definition.defaultOption) {
             const strRemaining = remainingValues.map((o) => `"${o}"`).join(", ");
             throw new LocalError(
-                `no default option for command '${command.definition.name}'; the following values were given without an option name: ${strRemaining}`
+                `no default option for command ${HIGHLIGHT.brightMagenta(
+                    command.definition.name
+                )}'; the following values were given without an option name: ${strRemaining}`
             );
         }
         const option = command.registerOption(command.definition.defaultOption, "long");
-        option.addValues(...remainingValues);
+        option?.addValues(...remainingValues);
     }
     return command;
-};
+}
 
-const stopProcessesOnPorts = async (ports: string[]) => {
+async function stopProcessesOnPorts(ports: string[]) {
     const strPorts = [...ports].sort().join(",");
     try {
         await $`lsof -ti :${strPorts} | xargs kill -9`;
@@ -65,7 +65,7 @@ const stopProcessesOnPorts = async (ports: string[]) => {
     } catch {
         // Command failed: (probably) due to no pIds found
     }
-};
+}
 
 try {
     await main();

@@ -1,6 +1,8 @@
 # Temporary memory data files
 
-memory_data/output/*
+memory_data/output
+memory_data/data_sources.ini
+temp
 
 # Logs
 logs
