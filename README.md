@@ -7,14 +7,9 @@
 
 ## Setup:
 
-Pull the repo and run the main file with your TS runtime (replace `bun` with `ts-node`, `deno`, ...):
+Use the following script to install everything in one go:
 ```bash
-bun .
-```
-
-For ease of use, it is recommended to create an alias in `~/.bashrc` (or similar .rc files):
-```bash
-alias odoo="bun <PATH/TO/ODOO-CLI>"
+curl -fsSL https://github.com/jum-odoo/odoo-cli/blob/master/install.sh | bash
 ```
 
 ## Examples:
@@ -24,9 +19,9 @@ Run the server on the current branch's database with default ports and addon-pat
 odoo
 ```
 
-Run the server with a different database, only with **community** addons:
+Get the list of available commands:
 ```bash
-odoo -d other_db --community
+odoo --help
 ```
 
 Drop the current database, create a new one with **default** addons (i.e. `crm`, `project` and `website`), and start it right after:
@@ -41,6 +36,6 @@ odoo test .test_unit_desktop
 
 Edit memory log sources and generate memory graph from a list of runbot links
 ```bash
-odoo memory edit # paste links on each line in the file
+odoo memory --edit # paste links on each line in the file
 odoo memory --open
 ```
