@@ -1,41 +1,46 @@
 # Odoo-CLI
 
+
 ## Requirements:
 
-- **Odoo** and all of its requirements (Python 3, PostgreSQL, etc.)
-- Bun (recommended, can be used with other TS runtimes)
+- [Odoo](https://github.com/odoo/odoo) and all of its requirements:
+  - [Python](https://www.python.org/);
+  - [PostgreSQL](https://www.postgresql.org/docs/current/app-psql.html);
+  - etc. (full list on [official documentation](https://www.odoo.com/documentation/master/administration/on_premise.html))
+- A **TypeScript** runtime: [bun](https://bun.com/), [deno](https://deno.com/) or [ts-node](https://www.npmjs.com/package/ts-node).
 
 ## Setup:
 
 Use the following script to install everything in one go:
-```bash
-curl -fsSL https://github.com/jum-odoo/odoo-cli/blob/master/install.sh | bash
+
+**ZSH**:
+```sh
+curl -fsSL https://raw.githubusercontent.com/jum-odoo/odoo-cli/refs/heads/master/install.sh | zsh
+```
+**Bash**:
+```sh
+curl -fsSL https://raw.githubusercontent.com/jum-odoo/odoo-cli/refs/heads/master/install.sh | bash
 ```
 
 ## Examples:
 
-Run the server on the current branch's database with default ports and addon-paths:
-```bash
+Run the server on a database having the same name as the current branch (e.g. master) with default port and addon-paths:
+```sh
 odoo
 ```
 
-Get the list of available commands:
-```bash
-odoo --help
-```
-
 Drop the current database, create a new one with **default** addons (i.e. `crm`, `project` and `website`), and start it right after:
-```bash
-odoo create default --start
+```sh
+odoo create -i default --start
 ```
 
-Run client unit tests from the server
-```bash
+Run client unit tests from the CLI
+```sh
 odoo test .test_unit_desktop
 ```
 
 Edit memory log sources and generate memory graph from a list of runbot links
-```bash
-odoo memory --edit # paste links on each line in the file
-odoo memory --open
+```sh
+odoo memory --edit # Paste links on each line in the file
+odoo memory # Open generated logs
 ```
