@@ -67,15 +67,15 @@ const CONSOLE_HIGHLIGHTS = {
 
 class Logger {
     debug(...args: any[]) {
-        isDebug() && console.debug(timestamp(), HIGHLIGHT.brightMagenta`[DEBUG]`, ...args);
+        isDebug() && console.debug(timestamp(), HIGHLIGHT.brightMagenta`[#]`, ...args);
     }
 
     error(...args: any[]) {
-        console.error(timestamp(), HIGHLIGHT.brightRed`[ERROR]`, ...args);
+        console.error(timestamp(), HIGHLIGHT.brightRed`[X]`, ...args);
     }
 
     info(...args: any[]) {
-        console.log(timestamp(), HIGHLIGHT.brightBlue`[INFO]`, ...args);
+        console.log(timestamp(), HIGHLIGHT.brightBlue`[i]`, ...args);
     }
 
     log(...args: any[]) {
@@ -83,7 +83,7 @@ class Logger {
     }
 
     warn(...args: any[]) {
-        console.warn(timestamp(), HIGHLIGHT.brightYellow`[WARNING]`, ...args);
+        console.warn(timestamp(), HIGHLIGHT.brightYellow`[!]`, ...args);
     }
 }
 

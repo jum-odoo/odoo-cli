@@ -57,7 +57,9 @@
         return {
             datasets: Array.from(datasetMap.entries(), ([label, dataset]) => ({
                 label,
-                afterLabel: [dataset.firstTest, dataset.lastTest].join(" → "),
+                afterLabel: `${trimSuite(dataset.firstTest)} → ${trimSuite(dataset.lastTest)} (${
+                    dataset.values.length
+                })`,
                 data: dataset.values,
             })),
             labels: labelList,
@@ -132,6 +134,14 @@
             values[key.trim()] = parsedValue;
         }
         return values;
+    }
+
+    /**
+     * @param {string} suite
+     */
+    function trimSuite(suite) {
+        const parts = suite.split("/");
+        return parts.length > 2 ? parts.shift() + "/../" + parts.pop() : parts.join("/");
     }
 
     function update() {
