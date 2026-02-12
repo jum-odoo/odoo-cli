@@ -2,13 +2,13 @@ import { CommandOption, CommandOptionType, type CommandOptionDefinition } from "
 import { BIN_PATH, LocalError, START_COMMAND } from "./constants";
 import { HIGHLIGHT, logger } from "./logger";
 import { $ } from "./process";
-import { getErrorMessageWithHelp, resolve, Resolver } from "./utils";
+import { getErrorMessageWithHelp } from "./utils";
 
 const { brightBlue, brightCyan, brightGreen, brightMagenta, brightRed, cyan, dim } = HIGHLIGHT;
 
 export interface CommandDefinition {
     alias?: string;
-    defaultArgs?: Resolver<string[]>;
+    defaultArgs?: CommandResolver<string[]>;
     defaultOption?: string;
     handler: CommandHandler;
     help: string[];
@@ -16,7 +16,9 @@ export interface CommandDefinition {
     options: CommandOptionDefinition[];
 }
 
-export type CommandHandler = (command: Command, args: string[]) => any;
+export type CommandHandler = (this: Command, ...args: string[]) => any;
+
+export type CommandResolver<T> = T | ((this: Command) => T | PromiseLike<T>);
 
 const EXECUTABLE_NAME = "odoo";
 const HELP_KEYWORD = "help";
@@ -125,10 +127,10 @@ export class Command {
             if (defaultValues) {
                 // Option has a default value
                 const option = this.registerOption(name, "long");
-                option?.addValues(...(await resolve(defaultValues)));
+                option?.addValues(...(await this.resolve(defaultValues)));
             } else if (required) {
                 // Option is required
-                throw new LocalError(`missing required option ${brightRed(name)}`);
+                throw new LocalError(`missing required option ${brightRed(name)}.`);
             }
         }
 
@@ -162,6 +164,12 @@ export class Command {
             this.options[optionDefinition.name] = new CommandOption(optionDefinition, type);
         }
         return this.options[optionDefinition.name];
+    }
+
+    resolve<T>(value: CommandResolver<T>): T | PromiseLike<T> {
+        return typeof value === "function"
+            ? (value as Exclude<CommandResolver<T>, T>).call(this)
+            : value;
     }
 
     async run() {
@@ -224,7 +232,7 @@ export class Command {
         }
 
         // Generate final command arguments from option values
-        const args: string[] = (await resolve(this.definition.defaultArgs)) || [];
+        const args: string[] = (await this.resolve(this.definition.defaultArgs)) || [];
         for (const option of Object.values(this.options)) {
             if (option.definition?.flag) {
                 let flag = option.definition.flag;
@@ -236,7 +244,7 @@ export class Command {
         }
 
         // Call command handler
-        await this.definition.handler(this, args);
+        await this.definition.handler.call(this, ...args);
     }
 }
 

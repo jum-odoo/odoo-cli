@@ -1,13 +1,13 @@
 import { Command } from "../command";
 import { HIGHLIGHT, logger } from "../logger";
 import { $ } from "../process";
-import { dropDatabase, startServer, warnError } from "../utils";
+import { and, dropDatabase, plural, startServer, warnError, withDemoData } from "../utils";
 
 const { brightYellow } = HIGHLIGHT;
 
 Command.register({
     name: "create",
-    defaultArgs: ["--with-demo", "--without-demo=False"],
+    defaultArgs: withDemoData,
     options: [
         "*",
         {
@@ -18,21 +18,21 @@ Command.register({
         },
     ],
     defaultOption: "database",
-    async handler(command, args) {
-        const dbName = command.options.database.values.join(" ");
+    async handler(...args) {
+        const dbNames = this.options.database.values;
         logger.info(
-            `creating new database ${brightYellow(dbName)} (${
-                command.options.start ? "with" : "without"
-            } auto-start)`
+            `creating new ${plural("database", dbNames.length, "es")} ${and(dbNames, (name) =>
+                brightYellow(name)
+            )} (${this.options.start ? "with" : "without"} auto-start)`
         );
         // Drop
-        await dropDatabase(command, args);
-        if (command.options.start) {
+        await dropDatabase(this, args);
+        if (this.options.start) {
             // Autostart
-            startServer(command, args);
+            startServer(this, args);
         } else {
             // Create
-            await $`createdb ${dbName}`.catch(warnError);
+            await Promise.all(dbNames.map((dbName) => $`createdb ${dbName}`.catch(warnError)));
         }
     },
     help: ["Create or overwrite a new database."],

@@ -13,13 +13,8 @@
 
 Use the following script to install everything in one go:
 
-**ZSH**:
 ```sh
-curl -fsSL https://raw.githubusercontent.com/jum-odoo/odoo-cli/refs/heads/master/install.sh | zsh
-```
-**Bash**:
-```sh
-curl -fsSL https://raw.githubusercontent.com/jum-odoo/odoo-cli/refs/heads/master/install.sh | bash
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/jum-odoo/odoo-cli/refs/heads/master/install.sh)"
 ```
 
 ## Examples:
@@ -29,9 +24,9 @@ Run the server on a database having the same name as the current branch (e.g. ma
 odoo
 ```
 
-Drop the current database, create a new one with **default** addons (i.e. `crm`, `project` and `website`), and start it right after:
+Overwrite current databasee with a new one, loading **default** addons (i.e. `crm`, `project` and `website`) and all addons starting with **website__**, and start it right after:
 ```sh
-odoo create -i default --start
+odoo create -i default,website_* --start
 ```
 
 Run client unit tests from the CLI

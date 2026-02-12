@@ -10,9 +10,9 @@ BLUE="\033[0;94m"
 MAGENTA="\033[0;95m"
 CYAN="\033[0;96m"
 
-ERROR="${RED}[X]${RESET}"
+ERROR="${RED}[x]${RESET}"
 INFO="${BLUE}[i]${RESET}"
-SUCCESS="${GREEN}[O]${RESET}"
+SUCCESS="${GREEN}[o]${RESET}"
 WARN="${YELLOW}[!]${RESET}"
 
 ### 1. Detect shell and rc file

@@ -4,7 +4,7 @@ import { readdir, readFile, rm, writeFile } from "fs/promises";
 import { join, sep } from "path";
 import readline from "readline/promises";
 import { Command } from "../command";
-import { LocalError } from "../constants";
+import { LocalError, R_NON_ALPHANUM } from "../constants";
 import { HIGHLIGHT, logger } from "../logger";
 import { $ } from "../process";
 import { ensureDirectory } from "../utils";
@@ -277,7 +277,6 @@ const R_ESCAPED_FILE_NAME_SEPARATOR = /[\s.\/:;#@-]+/g;
 const R_LABEL_SEPARATOR = /\s*=\s*/;
 const R_MEMINFO =
     /(?<time>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d+(,\d+)?).*(?<suite>\.(Mobile)?\w*Suite).*: \[MEMINFO\] (?<label>.+) \(after GC\) - used: (?<used>\d+) - total: (?<total>\d+) - limit: (?<limit>\d+)( - tests: (?<tests>\d+))?.*/gm;
-const R_NON_ALPHANUM = /\W/g;
 const R_SINGLE_QUOTES = /^'.*'$/;
 const R_SOURCE_COMMENT = /^[#;]/;
 const R_URL = /^https?:\/\//;
@@ -318,20 +317,20 @@ Command.register({
         },
     ],
     defaultOption: "sources",
-    async handler({ options }) {
-        if (options.clear) {
+    async handler() {
+        if (this.options.clear) {
             logger.info("Clearing local memory logs & data outputs");
             await clearDirectories(LOGS_DIR, OUTPUT_DIR);
         }
 
-        if (options.edit) {
+        if (this.options.edit) {
             logger.info("Opening source file for editing");
             return editMemorySources(SOURCE_PATH);
         }
 
         let sourceContent: string[];
-        if (options.sources?.values) {
-            sourceContent = options.sources.values;
+        if (this.options.sources?.values) {
+            sourceContent = this.options.sources.values;
         } else {
             // Get source URLs from data source file
             logger.debug(`Reading memory logs from source file ${cyan(SOURCE_PATH)}`);
@@ -348,10 +347,10 @@ Command.register({
         }
 
         const sourceHash = getSourceHash(sourceEntries);
-        let shouldReload = !!options.force;
+        let shouldReload = !!this.options.force;
         if (!shouldReload) {
             const checkHashPromises = [getDataHash(JS_DATA_FILE)];
-            if (options.csv) {
+            if (this.options.csv) {
                 checkHashPromises.push(getDataHash(CSV_DATA_FILE));
             }
             const dataHashes = await Promise.all(checkHashPromises);
@@ -361,15 +360,19 @@ Command.register({
             // Force or hash changed:
             // -> fetch file sources (remotely or locally)
             logger.info(`Parsing memory data from ${yellow(sourceEntries.length)} sources`);
-            const rowValues = await fetchSourceContents(sourceEntries, LOGS_DIR, !!options.force);
-            await writeMemoryData(rowValues, sourceHash, !!options.csv);
+            const rowValues = await fetchSourceContents(
+                sourceEntries,
+                LOGS_DIR,
+                !!this.options.force
+            );
+            await writeMemoryData(rowValues, sourceHash, !!this.options.csv);
         } else {
             // No hash change:
             // -> re-use same data file
             logger.info("Reading local data.");
         }
 
-        if (!options.noopen) {
+        if (!this.options.noopen) {
             logger.info(`Opening graph view in browser`);
             await $`open ${join(MEMORY_DATA_DIR, "index.html")}`;
         }

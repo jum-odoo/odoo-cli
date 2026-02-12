@@ -18,6 +18,8 @@ Command.register({
         },
     ],
     defaultOption: "tags",
-    handler: startServerFromCommand,
+    async handler(...args) {
+        return startServerFromCommand(this, args);
+    },
     help: ["Run Python tests"],
 });

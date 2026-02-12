@@ -2,8 +2,11 @@ import { Command } from "./command";
 import { LocalError, R_FULL_MATCH, R_SHORT_MATCH } from "./constants";
 import { HIGHLIGHT, logger } from "./logger";
 import { $, listenOnCloseEvents } from "./process";
+import { and } from "./utils";
 
 import "./commands/index";
+
+const { brightMagenta, brightRed } = HIGHLIGHT;
 
 async function main() {
     listenOnCloseEvents();
@@ -44,11 +47,13 @@ function parseArguments(args: string[]) {
     }
     if (remainingValues.length) {
         if (!command.definition.defaultOption) {
-            const strRemaining = remainingValues.map((o) => `"${o}"`).join(", ");
             throw new LocalError(
-                `no default option for command ${HIGHLIGHT.brightMagenta(
+                `no default option for command ${brightMagenta(
                     command.definition.name
-                )}'; the following values were given without an option name: ${strRemaining}`
+                )}'; the following values were given without an option name: ${and(
+                    remainingValues,
+                    (v) => brightRed(v)
+                )}.`
             );
         }
         const option = command.registerOption(command.definition.defaultOption, "long");
@@ -72,7 +77,7 @@ try {
 } catch (err) {
     if (err instanceof LocalError) {
         // Errors caught by this script
-        logger.error(err.message);
+        logger.error(err.message, "\n");
     } else {
         throw err;
     }

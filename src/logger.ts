@@ -71,7 +71,7 @@ class Logger {
     }
 
     error(...args: any[]) {
-        console.error(timestamp(), HIGHLIGHT.brightRed`[X]`, ...args);
+        console.error(timestamp(), HIGHLIGHT.brightRed`[x]`, ...args);
     }
 
     info(...args: any[]) {

@@ -1,13 +1,15 @@
 import { Command } from "../command";
 import { START_COMMAND } from "../constants";
-import { startServerFromCommand } from "../utils";
+import { startServerFromCommand, withDemoData } from "../utils";
 
 Command.register({
     name: START_COMMAND,
     alias: "start",
-    defaultArgs: ["--with-demo", "--without-demo=False"],
+    defaultArgs: withDemoData,
     options: ["*"],
     defaultOption: "addons",
-    handler: startServerFromCommand,
+    async handler(...args) {
+        return startServerFromCommand(this, args);
+    },
     help: ["Start the given database (default)"],
 });

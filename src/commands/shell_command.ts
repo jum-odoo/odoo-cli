@@ -12,6 +12,8 @@ Command.register({
         },
     ],
     defaultOption: "addons",
-    handler: startServerFromCommand,
+    async handler(...args) {
+        return startServerFromCommand(this, args);
+    },
     help: ["Opens the database Python environment in CLI"],
 });

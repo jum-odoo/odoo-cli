@@ -1,22 +1,22 @@
 import { access, mkdir, readdir, readFile, stat, writeFile } from "fs/promises";
 import { join } from "path";
-import { type Command } from "./command";
+import { Command } from "./command";
 import {
     ADDON_PACKS,
     ADDON_PATHS,
     BIN_PATH,
     COMMUNITY_PATH,
     LOCAL_HOST,
+    LOCALE,
     LocalError,
     MANIFEST_FILE_NAME,
+    R_NON_ALPHANUM,
     R_VALID_MODULE_NAME,
 } from "./constants";
 import { HIGHLIGHT, type Highlighter, logger } from "./logger";
 import { $, spawnProcess } from "./process";
 
-const { brightMagenta, brightYellow, brightRed } = HIGHLIGHT;
-
-export type Resolver<T> = T | (() => T | PromiseLike<T>);
+const { brightBlue, brightRed, brightYellow } = HIGHLIGHT;
 
 function getCsrfTokenFromHtml(html: string) {
     const match = html.match(R_CSRF_TOKEN);
@@ -66,9 +66,31 @@ const LVD_DELETE: number = 1;
 
 const R_BRANCH_DATABASE = /^(\d+\.\d|saas-\d+\.\d|master)/;
 const R_CSRF_TOKEN = /csrf_token\s*:\s*['"`](?<token>\w+)['"`]/im;
+const R_WILD_CARD = /\*+/g;
 const R_WHITE_SPACE = /\s+/g;
 
+const andFormatter = new Intl.ListFormat(LOCALE, { style: "long", type: "conjunction" });
+const orFormatter = new Intl.ListFormat(LOCALE, { style: "long", type: "disjunction" });
 const registeredModules: Record<string, string[]> = Object.create(null);
+
+export function and(list: Iterable<string>, mapFn?: (item: string) => string) {
+    if (mapFn) {
+        list = Array.from(list, mapFn);
+    }
+    return andFormatter.format(list);
+}
+
+export function asyncMemoize<T>(getter: () => PromiseLike<T>) {
+    let value: T;
+    let called = false;
+    return async function asyncMemoized() {
+        if (!called) {
+            called = true;
+            value = await getter();
+        }
+        return value;
+    };
+}
 
 export async function dropDatabase(command: Command, args: string[]) {
     const dbNames = command.options.database.values;
@@ -134,7 +156,7 @@ export function getErrorMessageWithHelp(
             closests.add(existingName);
         }
     }
-    const baseMessage = `unknown ${label}: ${terms.map((t) => brightRed(t)).join(", ")}.`;
+    const baseMessage = `unknown ${label}: ${and(terms.map((t) => brightRed(t)))}.`;
     if (!closests.size) {
         return baseMessage;
     }
@@ -142,7 +164,7 @@ export function getErrorMessageWithHelp(
     for (const closest of closests) {
         suggestions.push(suggestionColor(closest));
     }
-    return baseMessage + ` Did you mean ${suggestions.join(" or ")}?`;
+    return baseMessage + ` Did you mean ${or(suggestions)}?`;
 }
 
 export const levenshtein = (a: string, b: string): number => {
@@ -174,9 +196,29 @@ export const levenshtein = (a: string, b: string): number => {
     return matrix[a.length][b.length];
 };
 
+export function memoize<T>(getter: () => T) {
+    let value: T;
+    let called = false;
+    return function memoized() {
+        if (!called) {
+            called = true;
+            value = getter();
+        }
+        return value;
+    };
+}
+
+export function or(list: Iterable<string>, mapFn?: (item: string) => string) {
+    if (mapFn) {
+        list = Array.from(list, mapFn);
+    }
+    return orFormatter.format(list);
+}
+
 export async function parseAddons(addonsValue: string[]) {
-    const addons: string[] = [];
-    const invalidAddons = [];
+    const addons = new Set<string>();
+    const invalidAddons: string[] = [];
+    const noMatchesAddons: string[] = [];
     const validAddons = await getValidAddons();
     for (const addon of addonsValue.flatMap((v) => v.trim().split(/\s*,\s*/g))) {
         if (addon === "all") {
@@ -184,33 +226,41 @@ export async function parseAddons(addonsValue: string[]) {
                 (addon) => !addon.startsWith("l10n_") || addon.startsWith("l10n_be")
             );
         }
-        const addedModules = addon in ADDON_PACKS ? ADDON_PACKS[addon] : [addon];
-        for (const addon of addedModules) {
-            if (validAddons.includes(addon)) {
-                addons.push(addon);
-            } else {
-                invalidAddons.push(addon);
+        if (addon in ADDON_PACKS) {
+            for (const packAddon of ADDON_PACKS[addon]) {
+                addons.add(packAddon);
             }
+        } else if (R_WILD_CARD.test(addon)) {
+            const regex = new RegExp(`^${addon.replaceAll(R_WILD_CARD, ".*")}$`);
+            const foundAddons = validAddons.filter((validAddon) => regex.test(validAddon));
+            if (foundAddons.length) {
+                for (const foundAddon of foundAddons) {
+                    addons.add(foundAddon);
+                }
+            } else {
+                noMatchesAddons.push(addon);
+            }
+        } else if (validAddons.includes(addon)) {
+            addons.add(addon);
+        } else {
+            invalidAddons.push(addon);
         }
     }
-    if (invalidAddons.length) {
-        const errorMessage = getErrorMessageWithHelp(
-            "addons",
-            invalidAddons,
-            validAddons,
-            brightYellow
-        );
-        throw new LocalError(errorMessage);
+    const errors = [];
+    if (noMatchesAddons.length) {
+        errors.push(`no addons found matching: ${or(noMatchesAddons, (a) => brightRed(a))}`);
     }
-    return addons;
+    if (invalidAddons.length) {
+        errors.push(getErrorMessageWithHelp("addons", invalidAddons, validAddons, brightYellow));
+    }
+    if (errors.length) {
+        throw new LocalError(and(errors));
+    }
+    return Array.from(addons);
 }
 
 export function plural(word: string, count: number, suffix = "s") {
     return count === 1 ? word : word + suffix;
-}
-
-export function resolve<T>(value: Resolver<T>): T | Promise<T> {
-    return typeof value === "function" ? (value as () => T | Promise<T>)() : value;
 }
 
 export async function startServer(command: Command, args: string[]) {
@@ -245,15 +295,29 @@ export async function startServer(command: Command, args: string[]) {
 
 export async function startServerFromCommand(command: Command, args: string[]) {
     const dbName = command.options.database.values.join(" ");
-    logger.info(`starting database ${brightYellow(dbName)}`);
-    startServer(command, args);
-}
-
-export async function getDefaultDbName() {
-    const branch = await $`cd ${COMMUNITY_PATH} && git rev-parse --abbrev-ref HEAD`;
-    return [branch.match(R_BRANCH_DATABASE)?.[1] || "dev"];
+    const version = await getOdooVersion();
+    logger.info(`starting database ${brightYellow(dbName)} (odoo version ${brightBlue(version)})`);
+    return startServer(command, args);
 }
 
 export function warnError(error: any) {
     return logger.warn(formatError(error));
 }
+
+export async function withDemoData(this: Command) {
+    const version = await getOdooVersion();
+    if (version !== "master") {
+        const nVersion = Number(version?.split(".")[0].replaceAll(R_NON_ALPHANUM, ""));
+        if (!nVersion || nVersion < 19) {
+            // With <19 or unrecognized version: do not add "with-demo" (legacy)
+            return ["--without-demo=False"];
+        }
+    }
+    // With master or >=19: add "with-demo"
+    return ["--with-demo", "--without-demo=False"];
+}
+
+export const getOdooVersion = asyncMemoize(async () => {
+    const branchName = await $`cd ${COMMUNITY_PATH} && git rev-parse --abbrev-ref HEAD`;
+    return branchName.match(R_BRANCH_DATABASE)?.[1] || "dev";
+});

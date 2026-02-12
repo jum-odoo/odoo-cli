@@ -13,8 +13,9 @@ export function setDebug(value: boolean) {
 
 export class LocalError extends Error {}
 
-export const START_COMMAND = "server";
 export const LOCAL_HOST = "http://127.0.0.1";
+export const START_COMMAND = "server";
+export const LOCALE = Intl.DateTimeFormat().resolvedOptions().locale;
 
 export const ROOT_PATH = join(homedir(), "odoo");
 export const COMMUNITY_PATH = join(ROOT_PATH, "community");
@@ -38,5 +39,6 @@ export const ADDON_PACKS: Record<string, string[]> = {
 };
 
 export const R_FULL_MATCH = /^--(?<name>[\w-]+)/;
+export const R_NON_ALPHANUM = /\W/g;
 export const R_SHORT_MATCH = /^-(?<names>[\w-]+)/;
 export const R_VALID_MODULE_NAME = /^[a-z][\w-]*$/;

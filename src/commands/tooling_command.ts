@@ -37,7 +37,7 @@ async function git(...args: Parameters<typeof String.raw>) {
 }
 
 async function writeJsConfig(source: string, destination: string) {
-    const formatRoots = (object: any, key: string) => {
+    function formatRoots(object: any, key: string) {
         const initialList: string[] | undefined = object[key];
         if (!initialList) {
             return;
@@ -54,9 +54,9 @@ async function writeJsConfig(source: string, destination: string) {
             }
         }
         object[key] = list;
-    };
+    }
 
-    const gatherPath = async (path: string) => {
+    async function gatherPath(path: string) {
         try {
             await access(join(path, MANIFEST_FILE_NAME));
         } catch {
@@ -66,12 +66,12 @@ async function writeJsConfig(source: string, destination: string) {
             join(`@${path.split(sep).at(-1)}`, "*"),
             [join(relative(ROOT_PATH, path), SRC_PATH, "*")],
         ]);
-    };
+    }
 
-    const gatherPaths = async (path: string) => {
+    async function gatherPaths(path: string) {
         const items = await readdir(path);
         await Promise.all(items.map((item) => gatherPath(join(path, item))));
-    };
+    }
 
     const file = await readFile(source, "utf-8");
     const config = JSON.parse(file);
@@ -165,9 +165,9 @@ Command.register({
         },
     ],
     defaultOption: "action",
-    async handler(command) {
-        const action = command.options.action.values.join(" ");
-        switch (command.options.manager.values[0]) {
+    async handler() {
+        const action = this.options.action.values.join(" ");
+        switch (this.options.manager.values[0]) {
             case "bun": {
                 jsRuntime = "bun";
                 jsLockFile = "bun.lock";
@@ -180,14 +180,12 @@ Command.register({
             }
         }
         switch (action) {
-            case "disable":
-            case "off": {
+            case "disable": {
                 await _disable();
                 logger.info("tooling disabled");
                 break;
             }
-            case "enable":
-            case "on": {
+            case "enable": {
                 await _enable();
                 logger.info("tooling enabled");
                 break;

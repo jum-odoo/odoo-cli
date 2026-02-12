@@ -8,9 +8,9 @@ Command.register({
     name: "database",
     alias: "db",
     options: ["http-port"],
-    async handler(command, args) {
-        const [port] = command.options["http-port"].values || [];
-        await startServer(command, args);
+    async handler(...args) {
+        const [port] = this.options["http-port"].values || [];
+        await startServer(this, args);
         logger.info("Opening database manager");
         await $`open ${LOCAL_HOST}:${port}/web/database/manager`;
     },

@@ -1,13 +1,13 @@
-import { Command } from "./command";
+import type { Command, CommandResolver } from "./command";
 import { ADDON_PATHS, LocalError, setDebug } from "./constants";
 import { HIGHLIGHT } from "./logger";
-import { getDefaultDbName, parseAddons, Resolver } from "./utils";
+import { getOdooVersion, parseAddons } from "./utils";
 
 const { brightBlue, brightCyan } = HIGHLIGHT;
 
 export interface CommandOptionDefinition {
     autoInclude?: boolean;
-    defaultValues?: Resolver<string[]>;
+    defaultValues?: CommandResolver<string[]>;
     effect?: (command: Command) => any;
     flag?: string;
     help: (string | string[])[];
@@ -101,7 +101,7 @@ CommandOption.register({
     name: "database",
     short: "d",
     flag: "--database",
-    defaultValues: getDefaultDbName,
+    defaultValues: async () => [await getOdooVersion()],
     help: [
         "Database(s) used when installing or updating modules. Providing a comma-separated list restrict access to databases provided in list",
     ],
