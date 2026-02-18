@@ -21,7 +21,8 @@
         const labelMap = new Map();
         const datasetMap = new Map();
         let nextLabelIndex = 0;
-        for (const memoryData of DATA) {
+        for (const memoryData of LOG_DATA) {
+            const source = LOG_SOURCES[memoryData.source];
             if ((memoryData.isMobile && !mobile) || (!memoryData.isMobile && !desktop)) {
                 continue;
             }
@@ -33,28 +34,28 @@
             }
             let value = memoryData[metric];
             if (metric === "time") {
-                if (memoryData.label in labelRefs) {
-                    value -= labelRefs[memoryData.label];
+                if (memoryData.source in labelRefs) {
+                    value -= labelRefs[memoryData.source];
                 } else {
-                    labelRefs[memoryData.label] = value;
+                    labelRefs[memoryData.source] = value;
                     value = 0;
                 }
             }
             if (variance) {
-                [value, labelPrev[memoryData.label]] = [
-                    Math.abs(value - (labelPrev[memoryData.label] || 0)),
+                [value, labelPrev[memoryData.source]] = [
+                    Math.abs(value - (labelPrev[memoryData.source] || 0)),
                     value,
                 ];
             }
-            if (!datasetMap.has(memoryData.label)) {
-                datasetMap.set(memoryData.label, {
+            if (!datasetMap.has(source)) {
+                datasetMap.set(source, {
                     firstTest: suiteName,
                     lastTest: null,
                     size: 0,
                     data: [],
                 });
             }
-            const dataset = datasetMap.get(memoryData.label);
+            const dataset = datasetMap.get(source);
             dataset.lastTest = suiteName;
             dataset.data[labelMap.get(suiteName)] = value;
             dataset.size++;
@@ -62,8 +63,8 @@
 
         const labelList = Array.from(labelMap.keys());
         const data = {
-            datasets: Array.from(datasetMap.entries(), ([label, dataset]) => ({
-                label,
+            datasets: Array.from(datasetMap.entries(), ([source, dataset]) => ({
+                label: source,
                 afterLabel: `${trimSuite(dataset.firstTest)} → ${trimSuite(dataset.lastTest)} (${
                     dataset.size
                 })`,
@@ -95,7 +96,10 @@
 
     function onLegendClick({ native: ev }, legendItem, { chart }) {
         const hiddenValue = !legendItem.hidden;
-        if (ev.altKey) {
+        if (ev.ctrlKey && legendItem.text instanceof MemoryDataSource) {
+            const source = legendItem.text;
+            return window.open(source.getUrl(), "_blank");
+        } else if (ev.altKey) {
             const { datasets } = chart.data;
             for (let i = 0; i < datasets.length; i++) {
                 chart.getDatasetMeta(i).hidden = hiddenValue;
@@ -147,6 +151,13 @@
         return values;
     }
 
+    function parseSources(sources) {
+        for (const source of Object.values(sources)) {
+            sources[source.id] = new MemoryDataSource(source);
+        }
+        return sources;
+    }
+
     /**
      * @param {string} suite
      */
@@ -177,6 +188,21 @@
         }
     }
 
+    class MemoryDataSource extends String {
+        constructor(values) {
+            super(values?.label || "unknown");
+
+            this.url = values?.url || "about:blank";
+            if (values?.parent) {
+                this.parent = values.parent;
+            }
+        }
+
+        getUrl() {
+            return this.parent ? LOG_SOURCES[this.parent].getUrl() : this.url;
+        }
+    }
+
     const canvas = document.getElementById("chart-canvas");
 
     const R_FALSY = /(false|0)/i;
@@ -194,7 +220,10 @@
     updateFiltersFromHash();
 
     // @ts-ignore
-    const DATA = window.LOG_DATA || [];
+    const LOG_DATA = window.LOG_DATA || [];
+    // @ts-ignore
+    const LOG_SOURCES = parseSources(window.LOG_SOURCES || {});
+
     // @ts-ignore
     const chart = new Chart(canvas, {
         type: "line",

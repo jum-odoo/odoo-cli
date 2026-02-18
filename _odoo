@@ -1,0 +1,33 @@
+#compdef odoo
+
+_odoo() {
+  local -a commands
+  commands=(
+    'create:Create or overwrite a new database'
+    'database:Open the database manager'
+    'drop:Drop the given database'
+    'help:Display list of available commands'
+    'memory:Fetch logs and plot performance and memory usage'
+    'server:Start the given database (default)'
+    'shell:Opens the database Python environment in CLI'
+    'test:Run Python tests'
+    'tooling:Toggle JavaScript tooling'
+  )
+
+  # If completing the first argument
+  if (( CURRENT == 2 )); then
+    _describe 'command' commands
+    return
+  fi
+
+  # Subcommand-specific completion
+  case $words[2] in 
+    server)
+      _arguments \
+        '-h[Show help for the server command]' \
+        '--init[Initialize with file paths]:file:_files'
+      ;;
+  esac
+}
+
+_odoo "$@"

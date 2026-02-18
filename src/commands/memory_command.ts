@@ -11,12 +11,10 @@ import { $ } from "../process";
 
 const { brightBlue, brightCyan, cyan, yellow } = HIGHLIGHT;
 
-type SourceEntry = [label: string, url: string];
-
 interface MemoryData {
     isMobile: 0 | 1;
-    label: string;
-    // limit: number;
+    source: number;
+    // limit: number; // Limit is constant, so it's not really relevant
     suite: string;
     tests?: number;
     time: number;
@@ -24,9 +22,12 @@ interface MemoryData {
     used: number;
 }
 
-const RE_HREF_LOG_URL = /href=['"](?<url>([^'"]*\/logs\/start_\w+\.txt))['"]/gm;
-const SUPPORTED_PRIMARY_EDITORS = ["code", "codium", "pycharm", "webstorm", "subl"];
-const SUPPORTED_BACKUP_EDITORS = ["nano", "vi", "vim", "emacs"];
+interface MemoryDataSource {
+    id: number;
+    label: string;
+    url: string;
+    parent?: number;
+}
 
 async function editMemorySources(sourceFilePath: string) {
     const primaryEditor = await findEditor(SUPPORTED_PRIMARY_EDITORS);
@@ -42,9 +43,10 @@ async function editMemorySources(sourceFilePath: string) {
     throw new LocalError("no editor found on this system.");
 }
 
-function fetchSourceContents(sources: SourceEntry[], isSubSource: boolean = false) {
+function fetchSourceContents(sources: MemoryDataSource[]) {
     return Promise.all(
-        sources.map(async ([label, url]): Promise<MemoryData[]> => {
+        sources.map(async (source): Promise<MemoryData[]> => {
+            const { url } = source;
             let rStream: Readable;
             if (R_URL.test(url)) {
                 // Fetch source from URL
@@ -55,19 +57,19 @@ function fetchSourceContents(sources: SourceEntry[], isSubSource: boolean = fals
                     return [];
                 }
                 if (response.headers.get("content-type")?.includes("text/html")) {
-                    if (isSubSource) {
+                    if (source.parent) {
                         logger.warn(
                             `Sub-sources in other sub-sources have been ignored: ${yellow(url)}`
                         );
                         return [];
                     }
-                    const subSources = getSourcesFromHtml(label, await response.text());
+                    const subSources = getSourcesFromHtml(source, await response.text());
                     logger.info(
-                        `↳ Found ${yellow(
+                        `↳ ${brightBlue(source.label)}: parsing ${yellow(
                             subSources.length
-                        )} memory data sub-sources in ${brightBlue(label)}`
+                        )} memory data sub-sources`
                     );
-                    const subSourceContents = await fetchSourceContents(subSources, true);
+                    const subSourceContents = await fetchSourceContents(subSources);
                     return subSourceContents.flat();
                 }
                 rStream = Readable.fromWeb(response.body);
@@ -76,7 +78,7 @@ function fetchSourceContents(sources: SourceEntry[], isSubSource: boolean = fals
                 logger.debug(`Reading memory logs from file ${cyan(url)}`);
                 rStream = createReadStream(url, { encoding: "utf-8" });
             }
-            return parseLogs(label, rStream, isSubSource);
+            return parseLogs(source, rStream);
         })
     );
 }
@@ -102,23 +104,23 @@ async function getDataHash(path: PathLike) {
     });
 }
 
-function getSourceHash(sources: SourceEntry[]) {
+function getSourceHash(sources: MemoryDataSource[]) {
     const hash = createHash("sha256");
-    for (const [, url] of sources) {
+    for (const { url } of sources) {
         hash.update(url);
     }
     return hash.digest("hex");
 }
 
-function getSourcesFromHtml(label: string, body: string) {
+function getSourcesFromHtml(source: MemoryDataSource, body: string) {
     const urls = new Set<string>();
     for (const match of body.matchAll(RE_HREF_LOG_URL)) {
         const url = match.groups?.url;
         if (url) {
-            urls.add(label ? `${label}=${url}` : url);
+            urls.add(source.label ? `${source.label}=${url}` : url);
         }
     }
-    return parseSources(urls);
+    return parseSources(urls, source);
 }
 
 function getSqlTimeStamp(value: string) {
@@ -128,7 +130,7 @@ function getSqlTimeStamp(value: string) {
     return Number(new Date(`${date}T${h}:${m}:${s}.${ms}`));
 }
 
-async function parseLogs(logLabel: string, input: Readable, isSubSource: boolean) {
+async function parseLogs(source: MemoryDataSource, input: Readable) {
     const reader = readline.createInterface({
         input,
         crlfDelay: Infinity,
@@ -144,7 +146,7 @@ async function parseLogs(logLabel: string, input: Readable, isSubSource: boolean
         const isMobile = suite === MOBILE_SUITE ? 1 : 0;
         data.push({
             isMobile,
-            label: logLabel,
+            source: source.id,
             // limit: Number(limit),
             suite: suiteLabel,
             tests: tests ? Number(tests) : undefined,
@@ -155,19 +157,19 @@ async function parseLogs(logLabel: string, input: Readable, isSubSource: boolean
     }
     if (data.length) {
         logger.debug(
-            `Got ${yellow(data.length)} memory readings from source ${brightBlue(logLabel)}`
+            `Got ${yellow(data.length)} memory readings from source ${brightBlue(source.label)}`
         );
-    } else if (isSubSource) {
-        logger.debug(`Memory log source ${brightBlue(logLabel)} is empty`);
+    } else if (source.parent) {
+        logger.debug(`Memory log source ${brightBlue(source.label)} is empty`);
     } else {
-        logger.warn(`Memory log source ${brightBlue(logLabel)} is empty`);
+        logger.warn(`Memory log source ${brightBlue(source.label)} is empty`);
     }
     return data;
 }
 
-function parseSources(sourceContent: Iterable<string>) {
-    const sources: SourceEntry[] = [];
-    const countMap = new Map<string, SourceEntry[]>();
+function parseSources(sourceContent: Iterable<string>, parent?: MemoryDataSource) {
+    const sources: MemoryDataSource[] = [];
+    const countMap = new Map<string, MemoryDataSource[]>();
     for (const line of sourceContent) {
         const buildSpec = line.trim();
         if (!buildSpec || R_SOURCE_COMMENT.test(buildSpec)) {
@@ -190,17 +192,26 @@ function parseSources(sourceContent: Iterable<string>) {
                 label = url.split(urlSep).at(-1) || "";
             }
         }
-        const entry: SourceEntry = [label ? unquote(label) : DEFAULT_LABEL, url];
-        countMap.set(entry[0], (countMap.get(entry[0]) || []).concat([entry]));
-        sources.push(entry);
+        const source: MemoryDataSource = {
+            id: nextSourceId++,
+            label: label ? unquote(label) : DEFAULT_LABEL,
+            url,
+        };
+        if (parent) {
+            source.parent = parent.id;
+        }
+        allSources[source.id] = source;
+
+        countMap.set(source.label, (countMap.get(source.label) || []).concat([source]));
+        sources.push(source);
     }
 
     // Increment automatically entries with the same name
-    for (const entries of countMap.values()) {
-        const length = entries.length;
+    for (const countedSources of countMap.values()) {
+        const length = countedSources.length;
         if (length > 1) {
             for (let i = 0; i < length; i++) {
-                entries[i][0] += ` #${i + 1}`;
+                countedSources[i].label += ` #${i + 1}`;
             }
         }
     }
@@ -213,6 +224,12 @@ function unquote(string: string) {
         ? string.slice(1, -1)
         : string;
 }
+
+const RE_HREF_LOG_URL = /href=['"](?<url>([^'"]*\/logs\/start_\w+\.txt))['"]/gm;
+const SUPPORTED_PRIMARY_EDITORS = ["code", "codium", "pycharm", "webstorm", "subl"];
+const SUPPORTED_BACKUP_EDITORS = ["nano", "vi", "vim", "emacs"];
+const allSources: Record<number, MemoryDataSource> = {};
+let nextSourceId = 1;
 
 const DEFAULT_LABEL = "Source";
 const MOBILE_SUITE = ".MobileWebSuite";
@@ -297,9 +314,9 @@ Command.register({
             const data = await fetchSourceContents(sourceEntries);
             await writeFile(
                 JS_DATA_FILE,
-                `// ${sourceHash}\n((exports) => (exports.LOG_DATA = ${JSON.stringify(
-                    data.flat()
-                )}))(window.top);\n`,
+                `// ${sourceHash}\n((exports) => {\n  exports.LOG_SOURCES = ${JSON.stringify(
+                    allSources
+                )};\n  exports.LOG_DATA = ${JSON.stringify(data.flat())};\n})(window.top);\n`,
                 "utf-8"
             );
         } else {
