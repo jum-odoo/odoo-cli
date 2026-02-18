@@ -18,52 +18,63 @@
 
         const labelPrev = {};
         const labelRefs = {};
-        const labelSet = new Set();
+        const labelMap = new Map();
         const datasetMap = new Map();
-        for (const values of DATA) {
-            if ((values.isMobile && !mobile) || (!values.isMobile && !desktop)) {
+        let nextLabelIndex = 0;
+        for (const memoryData of DATA) {
+            if ((memoryData.isMobile && !mobile) || (!memoryData.isMobile && !desktop)) {
                 continue;
             }
-            labelSet.add(values.suite);
-            let value = values[metric];
+            const suiteName = memoryData.isMobile
+                ? `${memoryData.suite} (mobile)`
+                : memoryData.suite;
+            if (!labelMap.has(suiteName)) {
+                labelMap.set(suiteName, nextLabelIndex++);
+            }
+            let value = memoryData[metric];
             if (metric === "time") {
-                if (values.label in labelRefs) {
-                    value -= labelRefs[values.label];
+                if (memoryData.label in labelRefs) {
+                    value -= labelRefs[memoryData.label];
                 } else {
-                    labelRefs[values.label] = value;
+                    labelRefs[memoryData.label] = value;
                     value = 0;
                 }
             }
             if (variance) {
-                [value, labelPrev[values.label]] = [
-                    Math.abs(value - (labelPrev[values.label] || 0)),
+                [value, labelPrev[memoryData.label]] = [
+                    Math.abs(value - (labelPrev[memoryData.label] || 0)),
                     value,
                 ];
             }
-            if (datasetMap.has(values.label)) {
-                const dataset = datasetMap.get(values.label);
-                dataset.lastTest = values.suite;
-                dataset.values.push(value);
-            } else {
-                datasetMap.set(values.label, {
-                    firstTest: values.suite,
+            if (!datasetMap.has(memoryData.label)) {
+                datasetMap.set(memoryData.label, {
+                    firstTest: suiteName,
                     lastTest: null,
-                    values: [value],
+                    size: 0,
+                    data: [],
                 });
             }
+            const dataset = datasetMap.get(memoryData.label);
+            dataset.lastTest = suiteName;
+            dataset.data[labelMap.get(suiteName)] = value;
+            dataset.size++;
         }
 
-        const labelList = Array.from(labelSet);
-        return {
+        const labelList = Array.from(labelMap.keys());
+        const data = {
             datasets: Array.from(datasetMap.entries(), ([label, dataset]) => ({
                 label,
                 afterLabel: `${trimSuite(dataset.firstTest)} → ${trimSuite(dataset.lastTest)} (${
-                    dataset.values.length
+                    dataset.size
                 })`,
-                data: dataset.values,
+                data: dataset.data,
             })),
             labels: labelList,
         };
+
+        console.debug("[GENERATE]", data);
+
+        return data;
     }
 
     /**
@@ -148,7 +159,6 @@
         updating = 0;
         Object.assign(chart.data, generateData());
         chart.update();
-        console.debug("[UPDATE]", chart.data);
     }
 
     function updateFiltersFromHash() {

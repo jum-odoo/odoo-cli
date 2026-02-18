@@ -1,6 +1,6 @@
 # Temporary memory data files
 
-memory_data/output
+memory_data/log_data.js
 memory_data/data_sources.ini
 temp
 

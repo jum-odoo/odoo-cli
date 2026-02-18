@@ -251,6 +251,7 @@ export class Command {
 const helpCommandDefinition = Command.register({
     name: HELP_KEYWORD,
     options: [],
+    defaultOption: "noop",
     async handler() {
         const message = [
             `${brightCyan`Usage`}: ${brightGreen(

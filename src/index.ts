@@ -50,7 +50,7 @@ function parseArguments(args: string[]) {
             throw new LocalError(
                 `no default option for command ${brightMagenta(
                     command.definition.name
-                )}'; the following values were given without an option name: ${and(
+                )}; the following values were given without an option name: ${and(
                     remainingValues,
                     (v) => brightRed(v)
                 )}.`

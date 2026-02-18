@@ -13,8 +13,14 @@
 
 Use the following script to install everything in one go:
 
-```sh
-sh -c "$(curl -fsSL https://raw.githubusercontent.com/jum-odoo/odoo-cli/refs/heads/master/install.sh)"
+**Bash**
+```bash
+curl -fsSL https://raw.githubusercontent.com/jum-odoo/odoo-cli/refs/heads/master/install.sh | bash
+```
+
+**ZSH**
+```zsh
+curl -fsSL https://raw.githubusercontent.com/jum-odoo/odoo-cli/refs/heads/master/install.sh | zsh
 ```
 
 ## Examples:

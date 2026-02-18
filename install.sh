@@ -73,7 +73,7 @@ if [ -d "$REPO_PATH/.git" ]; then
   cd "$REPO_PATH"
 
   if git diff --quiet && git diff --cached --quiet; then
-    git pull --ff-only
+    git pull --ff-only >/dev/null 2>&1
     printf "$SUCCESS $APP_NAME updated.\n"
   else
     printf "$WARN Local changes detected in $CYAN$REPO_PATH$RESET. Skipping auto-update.\n"
