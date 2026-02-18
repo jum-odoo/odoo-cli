@@ -7,8 +7,8 @@ Command.register({
     options: [
         "*",
         {
-            tags: {
-                flag: "--test-tags",
+            ["test-tags"]: {
+                flag: true,
                 short: "tag",
                 required: true,
                 help: [
@@ -17,7 +17,7 @@ Command.register({
             },
         },
     ],
-    defaultOption: "tags",
+    defaultOption: "test-tags",
     async handler(...args) {
         return startServerFromCommand(this, args);
     },

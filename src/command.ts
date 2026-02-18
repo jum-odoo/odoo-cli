@@ -150,7 +150,7 @@ export class Command {
             return;
         }
         const lower = optionName.toLowerCase();
-        const optionDefinition = this.definition.options?.find((option) => {
+        let optionDefinition = this.definition.options?.find((option) => {
             if (type === "short") {
                 return option.short === optionName;
             } else {
@@ -158,7 +158,13 @@ export class Command {
             }
         });
         if (!optionDefinition) {
-            return;
+            if (type === "short") {
+                throw new LocalError(`unknown short option ${brightRed(optionName)}`);
+            }
+            optionDefinition = {
+                name: optionName,
+                flag: true,
+            };
         }
         if (!(optionDefinition.name in this.options)) {
             this.options[optionDefinition.name] = new CommandOption(optionDefinition, type);
@@ -203,7 +209,7 @@ export class Command {
                 if (optionLength > longestOption) {
                     longestOption = optionLength;
                 }
-                return [optionFlags, optionLength, option.help] as [
+                return [optionFlags, optionLength, option.help || []] as [
                     string,
                     number,
                     (string | string[])[]
@@ -235,7 +241,7 @@ export class Command {
         const args: string[] = (await this.resolve(this.definition.defaultArgs)) || [];
         for (const option of Object.values(this.options)) {
             if (option.definition?.flag) {
-                let flag = option.definition.flag;
+                let flag = `--${option.definition.name}`;
                 if (option.values.length) {
                     flag += "=" + option.values.join(",");
                 }

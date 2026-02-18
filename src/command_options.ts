@@ -9,8 +9,8 @@ export interface CommandOptionDefinition {
     autoInclude?: boolean;
     defaultValues?: CommandResolver<string[]>;
     effect?: (command: Command) => any;
-    flag?: string;
-    help: (string | string[])[];
+    flag?: boolean;
+    help?: (string | string[])[];
     name: string;
     parse?: (values: string[]) => string[] | PromiseLike<string[]>;
     required?: boolean;
@@ -100,7 +100,7 @@ export class CommandOption {
 CommandOption.register({
     name: "database",
     short: "d",
-    flag: "--database",
+    flag: true,
     defaultValues: async () => [await getOdooVersion()],
     help: [
         "Database(s) used when installing or updating modules. Providing a comma-separated list restrict access to databases provided in list",
@@ -110,7 +110,7 @@ CommandOption.register({
 CommandOption.register({
     name: "init",
     short: "i",
-    flag: "--init",
+    flag: true,
     parse: parseAddons,
     help: ["Comma-separated list of modules to install before running the server"],
 });
@@ -118,7 +118,7 @@ CommandOption.register({
 CommandOption.register({
     name: "update",
     short: "u",
-    flag: "--update",
+    flag: true,
     parse: parseAddons,
     help: [
         "Comma-separated list of modules to update before running the server. Use 'all' for all modules",
@@ -127,7 +127,7 @@ CommandOption.register({
 
 CommandOption.register({
     name: "reinit",
-    flag: "--reinit",
+    flag: true,
     parse: parseAddons,
     help: [
         "Comma-separated list of modules to reinitialize before starting the server.",
@@ -139,7 +139,7 @@ CommandOption.register({
 
 CommandOption.register({
     name: "addons-path",
-    flag: "--addons-path",
+    flag: true,
     defaultValues: Object.values(ADDON_PATHS),
     help: [
         "Comma-separated list of directories in which modules are stored. These directories are scanned for modules",
@@ -149,7 +149,7 @@ CommandOption.register({
 CommandOption.register({
     name: "config",
     short: "c",
-    flag: "--config",
+    flag: true,
     help: [
         "Path to an alternate configuration file. If not defined, Odoo checks ODOO_RC environmental variable and default location $HOME/.odoorc",
     ],
@@ -179,7 +179,7 @@ CommandOption.register({
 
 CommandOption.register({
     name: "dev",
-    flag: "--dev",
+    flag: true,
     defaultValues: ["all"],
     help: [
         "Comma-separated list of features. Possible features are:",
@@ -198,14 +198,14 @@ CommandOption.register({
 CommandOption.register({
     name: "load-language",
     short: "l",
-    flag: "--load-language",
+    flag: true,
     help: ["Comma-separated list of languages for the translations that will be loaded"],
 });
 
 CommandOption.register({
     name: "http-port",
     short: "p",
-    flag: "--http-port",
+    flag: true,
     defaultValues: ["8069"],
     help: ["Port on which the HTTP server listens, defaults to 8069"],
 });

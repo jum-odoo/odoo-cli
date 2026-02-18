@@ -309,12 +309,12 @@ export async function withDemoData(this: Command) {
     if (version !== "master") {
         const nVersion = Number(version?.split(".")[0].replaceAll(R_NON_ALPHANUM, ""));
         if (!nVersion || nVersion < 19) {
-            // With <19 or unrecognized version: do not add "with-demo" (legacy)
+            // With <19 or unrecognized version: use "without-demo" (legacy)
             return ["--without-demo=False"];
         }
     }
-    // With master or >=19: add "with-demo"
-    return ["--with-demo", "--without-demo=False"];
+    // With master or >=19: use "with-demo"
+    return ["--with-demo"];
 }
 
 export const getOdooVersion = asyncMemoize(async () => {
