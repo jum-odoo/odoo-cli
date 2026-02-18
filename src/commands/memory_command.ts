@@ -24,6 +24,7 @@ interface MemoryData {
     used: number;
 }
 
+const RE_HREF_LOG_URL = /href=['"](?<url>([^'"]*\/logs\/start_\w+\.txt))['"]/gm;
 const SUPPORTED_PRIMARY_EDITORS = ["code", "codium", "pycharm", "webstorm", "subl"];
 const SUPPORTED_BACKUP_EDITORS = ["nano", "vi", "vim", "emacs"];
 
@@ -41,17 +42,33 @@ async function editMemorySources(sourceFilePath: string) {
     throw new LocalError("no editor found on this system.");
 }
 
-function fetchSourceContents(sources: SourceEntry[]) {
+function fetchSourceContents(sources: SourceEntry[], isSubSource: boolean = false) {
     return Promise.all(
-        sources.map(async ([label, url]) => {
+        sources.map(async ([label, url]): Promise<MemoryData[]> => {
             let rStream: Readable;
             if (R_URL.test(url)) {
                 // Fetch source from URL
                 logger.debug(`Fetching memory logs from URL ${yellow(url)}`);
-                const response = await fetch(url);
+                let response = await fetch(url);
                 if (!response.body) {
                     logger.warn(`No content found at URL ${yellow(url)}`);
                     return [];
+                }
+                if (response.headers.get("content-type")?.includes("text/html")) {
+                    if (isSubSource) {
+                        logger.warn(
+                            `Sub-sources in other sub-sources have been ignored: ${yellow(url)}`
+                        );
+                        return [];
+                    }
+                    const subSources = getSourcesFromHtml(label, await response.text());
+                    logger.info(
+                        `↳ Found ${yellow(
+                            subSources.length
+                        )} memory data sub-sources in ${brightBlue(label)}`
+                    );
+                    const subSourceContents = await fetchSourceContents(subSources, true);
+                    return subSourceContents.flat();
                 }
                 rStream = Readable.fromWeb(response.body);
             } else {
@@ -59,7 +76,7 @@ function fetchSourceContents(sources: SourceEntry[]) {
                 logger.debug(`Reading memory logs from file ${cyan(url)}`);
                 rStream = createReadStream(url, { encoding: "utf-8" });
             }
-            return parseLogs(label, rStream);
+            return parseLogs(label, rStream, isSubSource);
         })
     );
 }
@@ -93,6 +110,17 @@ function getSourceHash(sources: SourceEntry[]) {
     return hash.digest("hex");
 }
 
+function getSourcesFromHtml(label: string, body: string) {
+    const urls = new Set<string>();
+    for (const match of body.matchAll(RE_HREF_LOG_URL)) {
+        const url = match.groups?.url;
+        if (url) {
+            urls.add(label ? `${label}=${url}` : url);
+        }
+    }
+    return parseSources(urls);
+}
+
 function getSqlTimeStamp(value: string) {
     const [date, time] = value.trim().split(/\s+/);
     const [h, m, _s] = time.split(":");
@@ -100,7 +128,7 @@ function getSqlTimeStamp(value: string) {
     return Number(new Date(`${date}T${h}:${m}:${s}.${ms}`));
 }
 
-async function parseLogs(logLabel: string, input: Readable) {
+async function parseLogs(logLabel: string, input: Readable, isSubSource: boolean) {
     const reader = readline.createInterface({
         input,
         crlfDelay: Infinity,
@@ -129,13 +157,15 @@ async function parseLogs(logLabel: string, input: Readable) {
         logger.debug(
             `Got ${yellow(data.length)} memory readings from source ${brightBlue(logLabel)}`
         );
+    } else if (isSubSource) {
+        logger.debug(`Memory log source ${brightBlue(logLabel)} is empty`);
     } else {
         logger.warn(`Memory log source ${brightBlue(logLabel)} is empty`);
     }
     return data;
 }
 
-function parseSources(sourceContent: string[]) {
+function parseSources(sourceContent: Iterable<string>) {
     const sources: SourceEntry[] = [];
     const countMap = new Map<string, SourceEntry[]>();
     for (const line of sourceContent) {
