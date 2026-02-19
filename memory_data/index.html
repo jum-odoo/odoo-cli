@@ -9,33 +9,57 @@
         <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
         <script src="./log_data.js" defer></script>
         <script src="./main.js" defer></script>
+        <link rel="icon" href="./favicon.svg" />
         <title>Memory graph</title>
     </head>
     <body>
         <div class="w-screen h-screen flex flex-col overflow-hidden">
-            <header class="flex w-full gap-3 p-3">
-                <label class="flex items-center gap-1 cursor-pointer">
-                    Metric
-                    <select name="metric" id="metric" class="border rounded">
-                        <option value="used" selected>Memory used</option>
-                        <option value="time">Time</option>
-                        <option value="total">Memory total</option>
-                        <!-- <option value="limit">Memory limit</option> -->
-                        <option value="tests">Number of tests</option>
-                    </select>
-                </label>
-                <label class="flex items-center gap-1 cursor-pointer">
-                    Desktop
-                    <input type="checkbox" name="desktop" id="desktop" checked />
-                </label>
-                <label class="flex items-center gap-1 cursor-pointer">
-                    Mobile
-                    <input type="checkbox" name="mobile" id="mobile" />
-                </label>
-                <label class="flex items-center gap-1 cursor-pointer">
-                    Show variance
-                    <input type="checkbox" name="variance" id="variance" />
-                </label>
+            <header class="flex w-full gap-4 p-3">
+                <form action="javascript:void(0)" class="contents">
+                    <label class="flex items-center gap-1 cursor-pointer">
+                        Metric
+                        <select name="metric" class="text-amber-600 cursor-pointer">
+                            <option value="used" selected>Memory used</option>
+                            <option value="time">Time</option>
+                            <option value="total">Memory total</option>
+                            <!-- <option value="limit">Memory limit</option> -->
+                            <option value="tests">Number of tests</option>
+                        </select>
+                    </label>
+                    <label class="flex items-center gap-1 cursor-pointer">
+                        Desktop
+                        <input
+                            type="checkbox"
+                            name="desktop"
+                            class="h-4 w-4 transition-colors appearance-none rounded border border-amber-600 checked:bg-amber-600"
+                            checked
+                        />
+                    </label>
+                    <label class="flex items-center gap-1 cursor-pointer">
+                        Mobile
+                        <input
+                            type="checkbox"
+                            name="mobile"
+                            class="h-4 w-4 transition-colors appearance-none rounded border border-amber-600 checked:bg-amber-600"
+                        />
+                    </label>
+                    <label class="flex items-center gap-1 cursor-pointer">
+                        Show variance
+                        <input
+                            type="checkbox"
+                            name="variance"
+                            class="h-4 w-4 transition-colors appearance-none rounded border border-amber-600 checked:bg-amber-600"
+                        />
+                    </label>
+                    <label class="flex items-center gap-1 cursor-pointer">
+                        Filter
+                        <input
+                            type="text"
+                            name="filter"
+                            class="border rounded px-1 text-amber-600"
+                        />
+                    </label>
+                </form>
             </header>
             <main class="flex p-2 w-full h-full">
                 <div class="w-full h-full">

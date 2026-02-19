@@ -5,16 +5,25 @@
      * @param {Record<string, any>} values
      */
     function formatHash(values) {
-        return `#${Object.entries(values)
-            .map(([key, value]) => `${key}=${value}`)
-            .join("&")}`;
+        return (
+            "#" +
+            Object.entries(values)
+                .reduce(
+                    (acc, [key, value]) => (value === "" ? acc : acc.concat([`${key}=${value}`])),
+                    []
+                )
+                .join("&")
+        );
     }
 
     function generateData() {
-        const desktop = desktopCheckbox.checked;
+        const filter = filterInput.value;
         const metric = metricSelect.value;
-        const mobile = mobileCheckbox.checked;
-        const variance = varianceCheckbox.checked;
+        const showDesktop = showDesktopInput.checked;
+        const showMobile = showMobileInput.checked;
+        const showVariance = showVarianceInput.checked;
+
+        const nFilter = filter.trim().toLowerCase();
 
         const labelPrev = {};
         const labelRefs = {};
@@ -23,7 +32,7 @@
         let nextLabelIndex = 0;
         for (const memoryData of LOG_DATA) {
             const source = LOG_SOURCES[memoryData.source];
-            if ((memoryData.isMobile && !mobile) || (!memoryData.isMobile && !desktop)) {
+            if ((memoryData.isMobile && !showMobile) || (!memoryData.isMobile && !showDesktop)) {
                 continue;
             }
             const suiteName = memoryData.isMobile
@@ -41,7 +50,7 @@
                     value = 0;
                 }
             }
-            if (variance) {
+            if (showVariance) {
                 [value, labelPrev[memoryData.source]] = [
                     Math.abs(value - (labelPrev[memoryData.source] || 0)),
                     value,
@@ -57,8 +66,10 @@
             }
             const dataset = datasetMap.get(source);
             dataset.lastTest = suiteName;
-            dataset.data[labelMap.get(suiteName)] = value;
             dataset.size++;
+            if (!nFilter || suiteName.toLowerCase().includes(nFilter)) {
+                dataset.data[labelMap.get(suiteName)] = value;
+            }
         }
 
         const labelList = Array.from(labelMap.keys());
@@ -79,35 +90,19 @@
     }
 
     /**
-     * @param {string} id
-     * @param {string} property
+     * @param {string} name
      */
-    function getAndBind(id, property) {
-        /** @type {any} */
-        const el = document.getElementById(id);
+    function bindFormControl(name) {
+        const [el] = document.getElementsByName(name);
+        const property = el.type === "checkbox" ? "checked" : "value";
+        formControls.push(el);
         el.addEventListener("change", function onChange(ev) {
             location.hash = formatHash({
                 ...parseHash(location.hash),
-                [id]: ev.currentTarget[property],
+                [name]: ev.currentTarget[property],
             });
         });
         return el;
-    }
-
-    function onLegendClick({ native: ev }, legendItem, { chart }) {
-        const hiddenValue = !legendItem.hidden;
-        if (ev.ctrlKey && legendItem.text instanceof MemoryDataSource) {
-            const source = legendItem.text;
-            return window.open(source.getUrl(), "_blank");
-        } else if (ev.altKey) {
-            const { datasets } = chart.data;
-            for (let i = 0; i < datasets.length; i++) {
-                chart.getDatasetMeta(i).hidden = hiddenValue;
-            }
-        } else {
-            chart.getDatasetMeta(legendItem.datasetIndex).hidden = hiddenValue;
-        }
-        chart.update();
     }
 
     function onHashChange() {
@@ -168,23 +163,57 @@
 
     function update() {
         updating = 0;
-        Object.assign(chart.data, generateData());
-        chart.update();
+        if (chart) {
+            const hiddenDatasetLabels = new Set();
+            const oldDatasets = chart.data.datasets;
+            for (let i = 0; i < oldDatasets.length; i++) {
+                if (chart.getDatasetMeta(i).hidden) {
+                    hiddenDatasetLabels.add(oldDatasets[i].label);
+                }
+            }
+            Object.assign(chart.data, generateData());
+            const newDatasets = chart.data.datasets;
+            for (let i = 0; i < newDatasets.length; i++) {
+                if (hiddenDatasetLabels.has(newDatasets[i].label)) {
+                    chart.getDatasetMeta(i).hidden = true;
+                }
+            }
+            chart.update();
+        } else {
+            canvas.width = canvas.offsetWidth;
+            canvas.height = canvas.offsetHeight;
+
+            const ctx = canvas.getContext("2d");
+            const text = "No data :(";
+            const textHeight = canvas.height * 0.1;
+            ctx.font = `italic ${textHeight}px Arial`;
+            const textWidth = ctx.measureText(text).width;
+            ctx.fillStyle = "#c0c0c0";
+            ctx.fillText(
+                text,
+                canvas.width / 2 - textWidth / 2,
+                canvas.height / 2 - textHeight / 2
+            );
+        }
     }
 
     function updateFiltersFromHash() {
         const hashValues = parseHash(location.hash);
-        if ("desktop" in hashValues) {
-            desktopCheckbox.checked = hashValues.desktop;
-        }
-        if ("metric" in hashValues) {
-            metricSelect.value = hashValues.metric;
-        }
-        if ("mobile" in hashValues) {
-            mobileCheckbox.checked = hashValues.mobile;
-        }
-        if ("variance" in hashValues) {
-            varianceCheckbox.checked = hashValues.variance;
+        for (const el of formControls) {
+            const name = el.getAttribute("name");
+            if (name in hashValues) {
+                switch (el.getAttribute("type")) {
+                    case "checkbox": {
+                        el.checked = Boolean(hashValues[name]);
+                        break;
+                    }
+                    default: {
+                        const value = hashValues[name];
+                        el.value = typeof value === "string" ? value : "";
+                        break;
+                    }
+                }
+            }
         }
     }
 
@@ -203,62 +232,88 @@
         }
     }
 
+    /** @type {HTMLCanvasElement} */
     const canvas = document.getElementById("chart-canvas");
+    const formControls = [];
 
     const RE_FALSY = /(false|0)/i;
     const RE_TRUTHY = /(true|1)/i;
 
     /** @type {HTMLInputElement} */
-    const desktopCheckbox = getAndBind("desktop", "checked");
+    const filterInput = bindFormControl("filter");
     /** @type {HTMLSelectElement} */
-    const metricSelect = getAndBind("metric", "value");
+    const metricSelect = bindFormControl("metric");
     /** @type {HTMLInputElement} */
-    const mobileCheckbox = getAndBind("mobile", "checked");
+    const showDesktopInput = bindFormControl("desktop");
     /** @type {HTMLInputElement} */
-    const varianceCheckbox = getAndBind("variance", "checked");
+    const showMobileInput = bindFormControl("mobile");
+    /** @type {HTMLInputElement} */
+    const showVarianceInput = bindFormControl("variance");
 
     updateFiltersFromHash();
+
+    /** @type {ChartOptions} */
+    const CHART_OPTIONS = {
+        animation: false,
+        elements: {
+            line: { borderWidth: 2 },
+            point: { radius: 1 },
+        },
+        interaction: {
+            intersect: false,
+            mode: "index",
+        },
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                onClick({ native: ev }, legendItem, { chart }) {
+                    const hiddenValue = !legendItem.hidden;
+                    if (ev.ctrlKey && legendItem.text instanceof MemoryDataSource) {
+                        const source = legendItem.text;
+                        return window.open(source.getUrl(), "_blank");
+                    } else if (ev.altKey) {
+                        const { datasets } = chart.data;
+                        for (let i = 0; i < datasets.length; i++) {
+                            chart.getDatasetMeta(i).hidden = hiddenValue;
+                        }
+                    } else {
+                        chart.getDatasetMeta(legendItem.datasetIndex).hidden = hiddenValue;
+                    }
+                    chart.update();
+                },
+            },
+            tooltip: {
+                callbacks: {
+                    afterLabel: ({ dataset }) => dataset.afterLabel,
+                },
+            },
+            zoom: {
+                zoom: {
+                    wheel: { enabled: true },
+                    pinch: { enabled: true },
+                    mode: "x",
+                },
+            },
+        },
+        responsive: true,
+    };
 
     // @ts-ignore
     const LOG_DATA = window.LOG_DATA || [];
     // @ts-ignore
     const LOG_SOURCES = parseSources(window.LOG_SOURCES || {});
 
-    // @ts-ignore
-    const chart = new Chart(canvas, {
-        type: "line",
-        data: generateData(),
-        options: {
-            animation: false,
-            elements: {
-                line: { borderWidth: 1 },
-                point: { radius: 1 },
-            },
-            interaction: {
-                intersect: false,
-                mode: "index",
-            },
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    onClick: onLegendClick,
-                },
-                tooltip: {
-                    callbacks: {
-                        afterLabel: ({ dataset }) => dataset.afterLabel,
-                    },
-                },
-                zoom: {
-                    zoom: {
-                        wheel: { enabled: true },
-                        pinch: { enabled: true },
-                        mode: "x",
-                    },
-                },
-            },
-            responsive: true,
-        },
-    });
+    let chart;
+    if (LOG_DATA.length) {
+        // @ts-ignore
+        chart = new Chart(canvas, {
+            type: "line",
+            data: generateData(),
+            options: CHART_OPTIONS,
+        });
+    } else {
+        update();
+    }
 
     window.addEventListener("hashchange", onHashChange);
     window.addEventListener("resize", onResize);
