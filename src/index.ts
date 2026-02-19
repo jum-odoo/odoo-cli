@@ -1,5 +1,5 @@
 import { Command } from "./command";
-import { LocalError, R_FULL_MATCH, R_SHORT_MATCH } from "./constants";
+import { LocalError, RE_FULL_MATCH, RE_SHORT_MATCH } from "./constants";
 import { HIGHLIGHT, logger } from "./logger";
 import { $, listenOnCloseEvents } from "./process";
 import { and } from "./utils";
@@ -30,9 +30,9 @@ function parseArguments(args: string[]) {
     const command = Command.find(args);
     for (const arg of args) {
         let match;
-        if ((match = arg.match(R_FULL_MATCH))) {
+        if ((match = arg.match(RE_FULL_MATCH))) {
             command.registerOption(match.groups!.name, "long");
-        } else if ((match = arg.match(R_SHORT_MATCH))) {
+        } else if ((match = arg.match(RE_SHORT_MATCH))) {
             for (const shortOption of match.groups!.names.split("")) {
                 command.registerOption(shortOption, "short");
             }

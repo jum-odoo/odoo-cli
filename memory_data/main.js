@@ -139,9 +139,9 @@
             }
             /** @type {string | number | boolean} */
             let parsedValue = value.trim() || "true";
-            if (R_TRUTHY.test(parsedValue)) {
+            if (RE_TRUTHY.test(parsedValue)) {
                 parsedValue = true;
-            } else if (R_FALSY.test(parsedValue)) {
+            } else if (RE_FALSY.test(parsedValue)) {
                 parsedValue = false;
             } else if (!isNaN(Number(parsedValue))) {
                 parsedValue = Number(parsedValue);
@@ -205,8 +205,8 @@
 
     const canvas = document.getElementById("chart-canvas");
 
-    const R_FALSY = /(false|0)/i;
-    const R_TRUTHY = /(true|1)/i;
+    const RE_FALSY = /(false|0)/i;
+    const RE_TRUTHY = /(true|1)/i;
 
     /** @type {HTMLInputElement} */
     const desktopCheckbox = getAndBind("desktop", "checked");

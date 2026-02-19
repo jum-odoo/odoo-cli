@@ -10,8 +10,8 @@ import {
     LOCALE,
     LocalError,
     MANIFEST_FILE_NAME,
-    R_NON_ALPHANUM,
-    R_VALID_MODULE_NAME,
+    RE_NON_ALPHANUM,
+    RE_VALID_MODULE_NAME,
 } from "./constants";
 import { HIGHLIGHT, type Highlighter, logger } from "./logger";
 import { $, spawnProcess } from "./process";
@@ -19,7 +19,7 @@ import { $, spawnProcess } from "./process";
 const { brightBlue, brightRed, brightYellow } = HIGHLIGHT;
 
 function getCsrfTokenFromHtml(html: string) {
-    const match = html.match(R_CSRF_TOKEN);
+    const match = html.match(RE_CSRF_TOKEN);
     return match?.groups?.token || null;
 }
 
@@ -28,7 +28,7 @@ async function getPathModules(path: string) {
     const items = await readdir(path);
     await Promise.all(
         items.map(async (item) => {
-            if (!R_VALID_MODULE_NAME.test(item)) {
+            if (!RE_VALID_MODULE_NAME.test(item)) {
                 return; // invalid module name
             }
             const fullItemPath = join(path, item);
@@ -64,10 +64,10 @@ const LVD_REPLACE: number = 1.5;
 const LVD_INSERT: number = 1;
 const LVD_DELETE: number = 1;
 
-const R_BRANCH_DATABASE = /^(\d+\.\d|saas-\d+\.\d|master)/;
-const R_CSRF_TOKEN = /csrf_token\s*:\s*['"`](?<token>\w+)['"`]/im;
-const R_WILD_CARD = /\*+/g;
-const R_WHITE_SPACE = /\s+/g;
+const RE_BRANCH_DATABASE = /^(\d+\.\d|saas-\d+\.\d|master)/;
+const RE_CSRF_TOKEN = /csrf_token\s*:\s*['"`](?<token>\w+)['"`]/im;
+const RE_WILD_CARD = /\*+/g;
+const RE_WHITE_SPACE = /\s+/g;
 
 const andFormatter = new Intl.ListFormat(LOCALE, { style: "long", type: "conjunction" });
 const orFormatter = new Intl.ListFormat(LOCALE, { style: "long", type: "disjunction" });
@@ -128,7 +128,7 @@ export function formatError(error: Error | string | null) {
             if (trimmedLine.startsWith("Command failed:")) {
                 return "";
             } else {
-                return trimmedLine.replaceAll(R_WHITE_SPACE, " ");
+                return trimmedLine.replaceAll(RE_WHITE_SPACE, " ");
             }
         })
         .filter(Boolean)
@@ -230,8 +230,8 @@ export async function parseAddons(addonsValue: string[]) {
             for (const packAddon of ADDON_PACKS[addon]) {
                 addons.add(packAddon);
             }
-        } else if (R_WILD_CARD.test(addon)) {
-            const regex = new RegExp(`^${addon.replaceAll(R_WILD_CARD, ".*")}$`);
+        } else if (RE_WILD_CARD.test(addon)) {
+            const regex = new RegExp(`^${addon.replaceAll(RE_WILD_CARD, ".*")}$`);
             const foundAddons = validAddons.filter((validAddon) => regex.test(validAddon));
             if (foundAddons.length) {
                 for (const foundAddon of foundAddons) {
@@ -307,7 +307,7 @@ export function warnError(error: any) {
 export async function withDemoData(this: Command) {
     const version = await getOdooVersion();
     if (version !== "master") {
-        const nVersion = Number(version?.split(".")[0].replaceAll(R_NON_ALPHANUM, ""));
+        const nVersion = Number(version?.split(".")[0].replaceAll(RE_NON_ALPHANUM, ""));
         if (!nVersion || nVersion < 19) {
             // With <19 or unrecognized version: use "without-demo" (legacy)
             return ["--without-demo=False"];
@@ -319,5 +319,5 @@ export async function withDemoData(this: Command) {
 
 export const getOdooVersion = asyncMemoize(async () => {
     const branchName = await $`cd ${COMMUNITY_PATH} && git rev-parse --abbrev-ref HEAD`;
-    return branchName.match(R_BRANCH_DATABASE)?.[1] || "dev";
+    return branchName.match(RE_BRANCH_DATABASE)?.[1] || "dev";
 });

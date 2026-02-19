@@ -1,11 +1,11 @@
 import { createHash } from "crypto";
 import { createReadStream, PathLike } from "fs";
 import { readFile, writeFile } from "fs/promises";
-import { join, sep } from "path";
+import { join } from "path";
 import readline from "readline/promises";
 import { Readable } from "stream";
 import { Command } from "../command";
-import { LocalError, R_NON_ALPHANUM } from "../constants";
+import { LocalError, RE_NON_ALPHANUM } from "../constants";
 import { HIGHLIGHT, logger } from "../logger";
 import { $ } from "../process";
 
@@ -48,7 +48,7 @@ function fetchSourceContents(sources: MemoryDataSource[]) {
         sources.map(async (source): Promise<MemoryData[]> => {
             const { url } = source;
             let rStream: Readable;
-            if (R_URL.test(url)) {
+            if (RE_URL.test(url)) {
                 // Fetch source from URL
                 logger.debug(`Fetching memory logs from URL ${yellow(url)}`);
                 let response = await fetch(url);
@@ -97,7 +97,7 @@ async function getDataHash(path: PathLike) {
         crlfDelay: Infinity,
     });
     reader.on("error", () => def.resolve("null"));
-    reader.on("line", (line) => def.resolve(line.replaceAll(R_NON_ALPHANUM, "")));
+    reader.on("line", (line) => def.resolve(line.replaceAll(RE_NON_ALPHANUM, "")));
     return def.promise.finally(() => {
         reader.close();
         stream.close();
@@ -138,7 +138,7 @@ async function parseLogs(source: MemoryDataSource, input: Readable) {
     reader.on("error", () => reader.close());
     const data: MemoryData[] = [];
     for await (const line of reader) {
-        const match = line.match(R_MEMINFO);
+        const match = line.match(RE_MEMINFO);
         if (!match?.groups) {
             continue;
         }
@@ -172,29 +172,29 @@ function parseSources(sourceContent: Iterable<string>, parent?: MemoryDataSource
     const countMap = new Map<string, MemoryDataSource[]>();
     for (const line of sourceContent) {
         const buildSpec = line.trim();
-        if (!buildSpec || R_SOURCE_COMMENT.test(buildSpec)) {
+        if (!buildSpec || RE_SOURCE_COMMENT.test(buildSpec)) {
             continue;
         }
-        let [label, ...urlParts] = buildSpec.split(R_LABEL_SEPARATOR);
+        let [label, ...urlParts] = buildSpec.split(RE_LABEL_SEPARATOR);
         let url: string;
         if (urlParts.length) {
             url = urlParts.join("=");
+            label = unquote(label);
         } else {
             url = label;
             label = "";
         }
         if (!label) {
-            const buildNameMatch = url.match(R_BUILD_NAME);
+            const buildNameMatch = url.match(RE_BUILD_NAME);
             if (buildNameMatch) {
-                label = buildNameMatch[1];
+                label = `Build ${buildNameMatch[1]}`;
             } else {
-                const urlSep = url.includes(sep) ? sep : "/";
-                label = url.split(urlSep).at(-1) || "";
+                label = url.split("/").at(-1) || DEFAULT_LABEL;
             }
         }
         const source: MemoryDataSource = {
             id: nextSourceId++,
-            label: label ? unquote(label) : DEFAULT_LABEL,
+            label,
             url,
         };
         if (parent) {
@@ -206,21 +206,11 @@ function parseSources(sourceContent: Iterable<string>, parent?: MemoryDataSource
         sources.push(source);
     }
 
-    // Increment automatically entries with the same name
-    for (const countedSources of countMap.values()) {
-        const length = countedSources.length;
-        if (length > 1) {
-            for (let i = 0; i < length; i++) {
-                countedSources[i].label += ` #${i + 1}`;
-            }
-        }
-    }
-
     return sources;
 }
 
 function unquote(string: string) {
-    return R_DOUBLE_QUOTES.test(string) || R_SINGLE_QUOTES.test(string)
+    return RE_DOUBLE_QUOTES.test(string) || RE_SINGLE_QUOTES.test(string)
         ? string.slice(1, -1)
         : string;
 }
@@ -240,14 +230,14 @@ const SOURCE_FILE_EMPTY_MESSAGE = `source file is empty or does not exist yet: r
 const SOURCE_PATH = join(MEMORY_DATA_DIR, "data_sources.ini");
 const JS_DATA_FILE = join(MEMORY_DATA_DIR, "log_data.js");
 
-const R_BUILD_NAME = /build\/(.*)\/logs/g;
-const R_DOUBLE_QUOTES = /^".*"$/;
-const R_LABEL_SEPARATOR = /\s*=\s*/;
-const R_MEMINFO =
+const RE_BUILD_NAME = /\/build\/(?<id>.*)\b/;
+const RE_DOUBLE_QUOTES = /^".*"$/;
+const RE_LABEL_SEPARATOR = /\s*=\s*/;
+const RE_MEMINFO =
     /(?<time>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d+(,\d+)?).*(?<suite>\.(Mobile)?\w*Suite).*: \[MEMINFO\] (?<label>@.+) \(after GC\) - used: (?<used>\d+) - total: (?<total>\d+) - limit: (?<limit>\d+)( - tests: (?<tests>\d+))?.*/;
-const R_SINGLE_QUOTES = /^'.*'$/;
-const R_SOURCE_COMMENT = /^[#;]/;
-const R_URL = /^https?:\/\//;
+const RE_SINGLE_QUOTES = /^'.*'$/;
+const RE_SOURCE_COMMENT = /^[#;]/;
+const RE_URL = /^https?:\/\//;
 
 Command.register({
     name: "memory",

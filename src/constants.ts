@@ -38,7 +38,7 @@ export const ADDON_PACKS: Record<string, string[]> = {
     accounting: ["account_accountant"],
 };
 
-export const R_FULL_MATCH = /^--(?<name>[\w-]+)/;
-export const R_NON_ALPHANUM = /\W/g;
-export const R_SHORT_MATCH = /^-(?<names>[\w-]+)/;
-export const R_VALID_MODULE_NAME = /^[a-z][\w-]*$/;
+export const RE_FULL_MATCH = /^--(?<name>[\w-]+)/;
+export const RE_NON_ALPHANUM = /\W/g;
+export const RE_SHORT_MATCH = /^-(?<names>[\w-]+)/;
+export const RE_VALID_MODULE_NAME = /^[a-z][\w-]*$/;
