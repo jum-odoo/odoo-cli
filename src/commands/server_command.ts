@@ -7,7 +7,10 @@ Command.register({
     alias: "start",
     defaultArgs: withDemoData,
     options: ["*"],
-    defaultOption: "addons",
+    parameters: {
+        name: "addons",
+        optionName: "init",
+    },
     async handler(...args) {
         return startServerFromCommand(this, args);
     },

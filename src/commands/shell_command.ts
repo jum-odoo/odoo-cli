@@ -11,7 +11,10 @@ Command.register({
             ["http-port"]: { defaultValues: ["8070"] },
         },
     ],
-    defaultOption: "addons",
+    parameters: {
+        name: "addons",
+        optionName: "init",
+    },
     async handler(...args) {
         return startServerFromCommand(this, args);
     },

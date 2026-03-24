@@ -17,7 +17,10 @@ Command.register({
             },
         },
     ],
-    defaultOption: "test-tags",
+    parameters: {
+        name: "tags",
+        optionName: "test-tags",
+    },
     async handler(...args) {
         return startServerFromCommand(this, args);
     },

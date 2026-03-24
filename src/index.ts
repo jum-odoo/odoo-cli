@@ -2,7 +2,7 @@ import { Command } from "./command";
 import { LocalError, RE_FULL_MATCH, RE_SHORT_MATCH } from "./constants";
 import { HIGHLIGHT, logger } from "./logger";
 import { $, listenOnCloseEvents } from "./process";
-import { and } from "./utils";
+import { and, plural, sorted } from "./utils";
 
 import "./commands/index";
 
@@ -11,14 +11,25 @@ const { brightMagenta, brightRed } = HIGHLIGHT;
 async function main() {
     listenOnCloseEvents();
 
-    const processArgs = process.argv.slice(2).flatMap((arg) => arg.split("="));
-    const command = parseArguments(processArgs);
+    const command = parseArguments(process.argv.slice(2));
+    if (Array.isArray(command)) {
+        for (const errorMessage of command) {
+            logger.error(errorMessage);
+        }
+        return logger.log("");
+    }
 
-    await command.processOptions();
+    const processErrors = await command.processOptions();
+    if (Array.isArray(processErrors)) {
+        for (const errorMessage of processErrors) {
+            logger.error(errorMessage);
+        }
+        return logger.log("");
+    }
 
     // If the command requires a port: cleans up the given port
-    if (command.options["http-port"]) {
-        await stopProcessesOnPorts(command.options["http-port"].values);
+    if (command.hasOption("http-port")) {
+        await stopProcessesOnPorts(command.getOptionValues("http-port"));
     }
 
     // Run command
@@ -26,44 +37,71 @@ async function main() {
 }
 
 function parseArguments(args: string[]) {
-    const remainingValues: string[] = [];
     const command = Command.find(args);
-    for (const arg of args) {
-        let match;
-        if ((match = arg.match(RE_FULL_MATCH))) {
-            command.registerOption(match.groups!.name, "long");
-        } else if ((match = arg.match(RE_SHORT_MATCH))) {
-            for (const shortOption of match.groups!.names.split("")) {
-                command.registerOption(shortOption, "short");
+    if (typeof command === "string") {
+        return [command];
+    }
+    const params: string[] = [];
+    const invalidOptions: Set<string> = new Set();
+    for (const rawArg of args) {
+        if (!rawArg) {
+            continue;
+        }
+        const [arg, argValue] = rawArg.split("=");
+        // Check for "full" match
+        const fullMatch = arg.match(RE_FULL_MATCH);
+        if (fullMatch?.groups?.name) {
+            const isValid = command.registerOption(fullMatch.groups.name, "long", [argValue]);
+            if (!isValid) {
+                invalidOptions.add(fullMatch.groups.name);
             }
+            continue;
+        }
+        // Check for "short" match
+        const shortMatch = arg.match(RE_SHORT_MATCH);
+        if (shortMatch?.groups?.names) {
+            for (const shortOption of shortMatch.groups.names.split("")) {
+                const isValid = command.registerOption(shortOption, "short", [argValue]);
+                if (!isValid) {
+                    invalidOptions.add(shortOption);
+                }
+            }
+            continue;
+        }
+        // No match: either push value to last option, or to the trailing values
+        const lastOption = [...command.options.values()].pop();
+        if (lastOption?.acceptsValues) {
+            lastOption.values.push(rawArg);
         } else {
-            const lastOption = Object.values(command.options).at(-1);
-            if (lastOption?.acceptsValues) {
-                lastOption.addValues(arg);
-            } else {
-                remainingValues.push(arg);
-            }
+            params.push(rawArg);
         }
     }
-    if (remainingValues.length) {
-        if (!command.definition.defaultOption) {
-            throw new LocalError(
-                `no default option for command ${brightMagenta(
+    if (invalidOptions.size) {
+        const list = [...invalidOptions];
+        return [
+            `unknown ${plural("option", list)} for command ${brightMagenta(command.definition.name)}: ${and(list, brightRed)}`,
+        ];
+    }
+    if (params.length) {
+        const { parameters } = command.definition;
+        if (!parameters) {
+            return [
+                `command ${brightMagenta(
                     command.definition.name
-                )}; the following values were given without an option name: ${and(
-                    remainingValues,
-                    (v) => brightRed(v)
-                )}.`
-            );
+                )} does not accept parameters; received: ${and(params, brightRed)}.`,
+            ];
         }
-        const option = command.registerOption(command.definition.defaultOption, "long");
-        option?.addValues(...remainingValues);
+        if (parameters.optionName) {
+            // Only registers option if specified on parameters;
+            // else: trailing values ('params') are simply discarded.
+            command.registerOption(parameters.optionName, "long", params);
+        }
     }
     return command;
 }
 
 async function stopProcessesOnPorts(ports: string[]) {
-    const strPorts = [...ports].sort().join(",");
+    const strPorts = sorted(ports).join(",");
     try {
         await $`lsof -ti :${strPorts} | xargs kill -9`;
         logger.info(`terminated existing processes listening on port(s): ${strPorts}`);

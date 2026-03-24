@@ -10,22 +10,44 @@ export type Highlighter = {
             | { raw: readonly string[] | ArrayLike<string> },
         ...substitutions: any[]
     ): string;
-    (...strings: string[]): string;
+    (string: string): string;
 };
 
 function makeHighlighter(...styles: (keyof typeof CONSOLE_HIGHLIGHTS)[]): Highlighter {
     const styleStr = styles.map((style) => CONSOLE_HIGHLIGHTS[style]).join("");
     return function wrapColor(template, ...substitutions) {
         const str =
-            template && typeof template === "object"
+            template && typeof template === "object" && template.raw
                 ? String.raw(template, substitutions)
-                : [template, ...substitutions].join(" ");
+                : template;
         return styleStr + str + CONSOLE_HIGHLIGHTS.reset;
     };
 }
 
 function timestamp(): string {
     return new Date().toISOString().slice(11, 23);
+}
+
+class Logger {
+    debug(...args: any[]) {
+        isDebug() && console.debug(timestamp(), HIGHLIGHT.brightMagenta`[#]`, ...args);
+    }
+
+    error(...args: any[]) {
+        console.error(timestamp(), HIGHLIGHT.brightRed`[x]`, ...args);
+    }
+
+    info(...args: any[]) {
+        console.log(timestamp(), HIGHLIGHT.brightBlue`[i]`, ...args);
+    }
+
+    log(...args: any[]) {
+        console.log(...args);
+    }
+
+    warn(...args: any[]) {
+        console.warn(timestamp(), HIGHLIGHT.brightYellow`[!]`, ...args);
+    }
 }
 
 /**
@@ -64,31 +86,15 @@ const CONSOLE_HIGHLIGHTS = {
     // brightCyan: "\x1b[96m",
     // brightWhite: "\x1b[97m",
 };
+const RE_CONTROL_CHARACTERS = /\u001B\[\d+m/gu;
 
-class Logger {
-    debug(...args: any[]) {
-        isDebug() && console.debug(timestamp(), HIGHLIGHT.brightMagenta`[#]`, ...args);
-    }
-
-    error(...args: any[]) {
-        console.error(timestamp(), HIGHLIGHT.brightRed`[x]`, ...args);
-    }
-
-    info(...args: any[]) {
-        console.log(timestamp(), HIGHLIGHT.brightBlue`[i]`, ...args);
-    }
-
-    log(...args: any[]) {
-        console.log(...args);
-    }
-
-    warn(...args: any[]) {
-        console.warn(timestamp(), HIGHLIGHT.brightYellow`[!]`, ...args);
-    }
+export function removeHighlight(string: string) {
+    return string.replaceAll(RE_CONTROL_CHARACTERS, "");
 }
 
 export const HIGHLIGHT = {
     // Premade helpers
+    blue: makeHighlighter("blue"),
     brightBlue: makeHighlighter("bold", "blue"),
     brightCyan: makeHighlighter("bold", "cyan"),
     brightGreen: makeHighlighter("bold", "green"),

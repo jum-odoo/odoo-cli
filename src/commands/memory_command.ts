@@ -8,6 +8,7 @@ import { Command } from "../command";
 import { LocalError, RE_NON_ALPHANUM } from "../constants";
 import { HIGHLIGHT, logger } from "../logger";
 import { $ } from "../process";
+import { mapped } from "../utils";
 
 const { brightBlue, brightCyan, cyan, yellow } = HIGHLIGHT;
 
@@ -45,7 +46,7 @@ async function editMemorySources(sourceFilePath: string) {
 
 function fetchSourceContents(sources: MemoryDataSource[]) {
     return Promise.all(
-        sources.map(async (source): Promise<MemoryData[]> => {
+        mapped(sources, async (source): Promise<MemoryData[]> => {
             const { url } = source;
             let rStream: Readable;
             if (RE_URL.test(url)) {
@@ -84,9 +85,9 @@ function fetchSourceContents(sources: MemoryDataSource[]) {
 }
 
 function findEditor(editors: string[]) {
-    return Promise.any(editors.map((editor) => $`${editor} --version`.then(() => editor))).catch(
-        () => false
-    );
+    return Promise.any(
+        mapped(editors, (editor) => $`${editor} --version`.then(() => editor))
+    ).catch(() => false);
 }
 
 async function getDataHash(path: PathLike) {
@@ -266,16 +267,19 @@ Command.register({
             },
         },
     ],
-    defaultOption: "sources",
+    parameters: {
+        name: "URLs or paths",
+        optionName: "sources",
+    },
     async handler() {
-        if (this.options.edit) {
+        if (this.hasOption("edit")) {
             logger.info("Opening source file for editing");
             await editMemorySources(SOURCE_PATH);
         }
 
         let sourceContent: string[];
-        if (this.options.sources?.values) {
-            sourceContent = this.options.sources.values;
+        if (this.hasOption("sources")) {
+            sourceContent = this.getOptionValues("sources");
         } else {
             // Get source URLs from data source file
             logger.debug(`Reading memory logs from source file ${cyan(SOURCE_PATH)}`);
@@ -292,7 +296,7 @@ Command.register({
         }
 
         const sourceHash = getSourceHash(sourceEntries);
-        let shouldReload = !!this.options.force;
+        let shouldReload = this.hasOption("force");
         if (!shouldReload) {
             const dataHash = await getDataHash(JS_DATA_FILE);
             shouldReload = sourceHash !== dataHash;
@@ -315,7 +319,7 @@ Command.register({
             logger.info("Reading local data.");
         }
 
-        if (!this.options.noopen) {
+        if (!this.hasOption("noopen")) {
             logger.info(`Opening graph view in browser`);
             await $`open ${join(MEMORY_DATA_DIR, "index.html")}`;
         }

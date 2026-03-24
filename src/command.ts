@@ -1,24 +1,63 @@
 import { CommandOption, CommandOptionType, type CommandOptionDefinition } from "./command_options";
-import { BIN_PATH, LocalError, START_COMMAND } from "./constants";
-import { HIGHLIGHT, logger } from "./logger";
-import { $ } from "./process";
-import { getErrorMessageWithHelp } from "./utils";
+import { START_COMMAND } from "./constants";
+import { HIGHLIGHT, logger, removeHighlight } from "./logger";
+import {
+    and,
+    filtered,
+    getErrorMessageWithHelp,
+    getOdooVersion,
+    mapped,
+    plural,
+    sorted,
+} from "./utils";
 
-const { brightBlue, brightCyan, brightGreen, brightMagenta, brightRed, cyan, dim } = HIGHLIGHT;
+export type CommandHelp = (string | string[])[];
+
+export interface CommandParameters {
+    name: string;
+    optionName?: string;
+}
 
 export interface CommandDefinition {
     alias?: string;
     defaultArgs?: CommandResolver<string[]>;
-    defaultOption?: string;
     handler: CommandHandler;
-    help: string[];
+    help: CommandHelp;
     name: string;
     options: CommandOptionDefinition[];
+    parameters?: CommandParameters;
 }
+
+export interface CommandParametersDefinition {}
 
 export type CommandHandler = (this: Command, ...args: string[]) => any;
 
 export type CommandResolver<T> = T | ((this: Command) => T | PromiseLike<T>);
+
+const { blue, brightBlue, brightCyan, brightGreen, brightMagenta, brightRed, cyan, dim, magenta } =
+    HIGHLIGHT;
+
+function* formatHelp(
+    label: string,
+    [firstLine, ...helpLines]: CommandHelp,
+    additionalSpacing: number
+) {
+    const labelLength = removeHighlight(label).length;
+    const spacing = " ".repeat(additionalSpacing - labelLength) + HELP_INDENT;
+    yield HELP_INDENT + label + spacing + ((typeof firstLine === "string" && firstLine) || "");
+    if (helpLines.length) {
+        const entryIndent = HELP_INDENT + " ".repeat(labelLength) + spacing;
+        for (const helpLine of helpLines) {
+            if (typeof helpLine === "string") {
+                yield entryIndent + helpLine;
+            } else {
+                for (const line of helpLine) {
+                    yield entryIndent + line;
+                }
+            }
+        }
+    }
+}
 
 const EXECUTABLE_NAME = "odoo";
 const HELP_KEYWORD = "help";
@@ -32,8 +71,7 @@ const versionCommandDefinition: CommandDefinition = {
     options: [],
     help: [],
     async handler() {
-        const version = await $`${BIN_PATH} --version`;
-        logger.log(version);
+        logger.log(await getOdooVersion());
     },
 };
 
@@ -60,13 +98,12 @@ export class Command {
                 aliases[desc.alias] = desc;
             }
             if (!commandDefinition) {
-                const errorMessage = getErrorMessageWithHelp(
+                return getErrorMessageWithHelp(
                     "command",
                     [name],
                     Object.keys(aliases).concat(...this.definitions.keys()),
                     brightMagenta
                 );
-                throw new LocalError(errorMessage);
             }
         }
 
@@ -88,88 +125,108 @@ export class Command {
 
     definition: CommandDefinition;
     isDefaultCommand: boolean;
-    options: Record<string, CommandOption> = Object.create(null);
+    options: Map<string, CommandOption> = new Map();
 
     constructor(definition: CommandDefinition, isDefaultCommand: boolean) {
         this.definition = definition;
         this.isDefaultCommand = isDefaultCommand;
     }
 
+    getOption(optionName: string) {
+        return this.options.get(optionName);
+    }
+
+    getOptionValues(optionName: string) {
+        return this.options.get(optionName)?.values || [];
+    }
+
+    hasOption(optionName: string) {
+        return this.options.has(optionName);
+    }
+
     async processOptions() {
-        if (HELP_KEYWORD in this.options) {
+        if (this.hasOption(HELP_KEYWORD)) {
             if (this.isDefaultCommand) {
                 this.definition = helpCommandDefinition;
-                this.options = {};
+                this.options.clear();
             } else {
-                for (const name in this.options) {
+                for (const name in this.options.keys()) {
                     if (name !== HELP_KEYWORD) {
-                        delete this.options[name];
+                        this.options.delete(name);
                     }
                 }
             }
             return;
         }
         if (this.definition.name === HELP_KEYWORD) {
-            this.options = {};
+            this.options.clear();
             return;
         }
-        if (VERSION_KEYWORD in this.options && this.isDefaultCommand) {
+        if (this.hasOption(VERSION_KEYWORD) && this.isDefaultCommand) {
             this.definition = versionCommandDefinition;
             return;
         }
 
         // Auto-complete default options & check missing required options
-        for (const optionDefinition of Object.values(this.definition.options || {})) {
+        const missingRequiredOptions: string[] = [];
+        for (const optionDefinition of this.definition.options) {
             const { defaultValues, name, required } = optionDefinition;
-            if (name in this.options) {
+            if (this.hasOption(name)) {
                 continue;
             }
             if (defaultValues) {
                 // Option has a default value
-                const option = this.registerOption(name, "long");
-                option?.addValues(...(await this.resolve(defaultValues)));
+                this.registerOption(name, "long", await this.resolve(defaultValues));
             } else if (required) {
                 // Option is required
-                throw new LocalError(`missing required option ${brightRed(name)}.`);
+                missingRequiredOptions.push(name);
             }
         }
 
-        const optionList = Object.values(this.options);
+        if (missingRequiredOptions.length) {
+            return [
+                `missing required ${plural("option", missingRequiredOptions)}: ${and(missingRequiredOptions, brightRed)}.`,
+            ];
+        }
 
         // Parse option values (in parallel)
-        await Promise.all(optionList.map((option) => option.parseValues()));
+        await Promise.all(mapped(this.options.values(), (option) => option.parseValues()));
 
         // Apply option effects (sequentially)
-        for (const option of optionList) {
+        for (const option of this.options.values()) {
             await option.applyEffect(this);
         }
     }
 
-    registerOption(optionName: string, type: CommandOptionType) {
+    registerOption(optionName: string, type: CommandOptionType, values: string[]) {
         if (this.definition.name === HELP_KEYWORD) {
-            return;
+            return true;
         }
         const lower = optionName.toLowerCase();
-        let optionDefinition = this.definition.options?.find((option) => {
-            if (type === "short") {
-                return option.short === optionName;
-            } else {
-                return option.name === lower || option.short?.includes(lower);
-            }
-        });
+        let optionDefinition = this.definition.options.find(
+            (option) => option.short === optionName || (type === "long" && option.name === lower)
+        );
         if (!optionDefinition) {
             if (type === "short") {
-                throw new LocalError(`unknown short option ${brightRed(optionName)}`);
+                return false;
             }
             optionDefinition = {
                 name: optionName,
                 flag: true,
             };
         }
-        if (!(optionDefinition.name in this.options)) {
-            this.options[optionDefinition.name] = new CommandOption(optionDefinition, type);
+        if (!this.hasOption(optionDefinition.name)) {
+            this.options.set(optionDefinition.name, new CommandOption(optionDefinition, type));
         }
-        return this.options[optionDefinition.name];
+        const filteredValues = values.filter(Boolean);
+        if (filteredValues.length) {
+            const definition = this.getOption(optionDefinition.name)!;
+            if (!definition.acceptsValues) {
+                return false;
+            }
+            definition.values.push(...filteredValues);
+        }
+        return true;
     }
 
     resolve<T>(value: CommandResolver<T>): T | PromiseLike<T> {
@@ -179,58 +236,66 @@ export class Command {
     }
 
     async run() {
-        if (HELP_KEYWORD in this.options && this.definition.name !== HELP_KEYWORD) {
-            const defaultOption = this.definition.defaultOption;
+        if (this.hasOption(HELP_KEYWORD) && this.definition.name !== HELP_KEYWORD) {
+            const parameters = this.definition.parameters;
             const message = [
-                `${brightCyan`Usage`}: ${brightGreen(EXECUTABLE_NAME, this.definition.name)} ${
-                    defaultOption ? brightBlue`<${defaultOption}> ` : ""
+                `${brightCyan`Usage`}: ${brightGreen(EXECUTABLE_NAME)} ${brightMagenta(this.definition.name)} ${
+                    parameters ? brightBlue`<${parameters.name}> ` : ""
                 }${cyan`[...options]`}`,
             ];
             if (this.definition.alias) {
                 message.push(
-                    `${brightCyan`Alias`}: ${brightGreen(EXECUTABLE_NAME, this.definition.alias)}`
+                    `${brightCyan`Alias`}: ${brightGreen(EXECUTABLE_NAME)} ${brightMagenta(this.definition.alias)}`
                 );
             }
-            message.push("", `${brightCyan`Options`}:`);
-            const sortedOptions = this.definition.options.sort((a, b) =>
-                a.name.localeCompare(b.name)
+
+            let parameterOption!: CommandOptionDefinition;
+            let hasShort = false;
+            const filteredOptions = mapped(
+                filtered(this.definition.options, (option) => option.help),
+                (option) => {
+                    hasShort ||= !!option.short;
+                    if (option.name === parameters?.optionName) {
+                        parameterOption = option;
+                        option = Object.create(option);
+                        option.help = [
+                            dim`Option form of the ` +
+                                brightBlue(parameters.name) +
+                                dim` parameter; look up above for more information`,
+                        ];
+                    }
+                    return option;
+                }
             );
-            let longestOption = 0;
+
+            const sortedOptions = sorted(filteredOptions, "name");
+            const shortIndent = hasShort ? " ".repeat(4) : "";
+            let totalSpacing = 0;
             const optionHelpEntries = sortedOptions.map((option) => {
                 const longFlag = `--${option.name}`;
                 let optionFlags = option.short
-                    ? `-${option.short}, ${longFlag}`
-                    : " ".repeat(4) + longFlag;
-                let optionLength = optionFlags.length;
+                    ? `-${option.short}, ` + longFlag
+                    : shortIndent + longFlag;
                 if (!option.standalone) {
-                    optionLength += OPTION_VALUE_SUFFIX.length;
-                    optionFlags += `${dim(OPTION_VALUE_SUFFIX)}`;
+                    optionFlags += dim(OPTION_VALUE_SUFFIX);
                 }
-                if (optionLength > longestOption) {
-                    longestOption = optionLength;
-                }
-                return [optionFlags, optionLength, option.help || []] as [
-                    string,
-                    number,
-                    (string | string[])[]
-                ];
+                totalSpacing = Math.max(totalSpacing, removeHighlight(optionFlags).length);
+                return [cyan(optionFlags), option.help!] as [string, CommandHelp];
             });
 
-            for (const [flag, length, helpInfo] of optionHelpEntries) {
-                const spacing = longestOption - length;
-                const prefix = HELP_INDENT + flag + " ".repeat(spacing) + HELP_INDENT;
-                const entryIndent = " ".repeat(HELP_INDENT.length * 2 + spacing + length);
-                const firstLine = typeof helpInfo[0] === "string" && helpInfo.shift();
-                message.push(cyan(prefix) + (firstLine || ""));
-                for (const helpEntry of helpInfo) {
-                    if (typeof helpEntry === "string") {
-                        message.push(entryIndent + helpEntry);
-                    } else {
-                        for (const line of helpEntry) {
-                            message.push(entryIndent + line);
-                        }
-                    }
+            if (parameterOption) {
+                let label = brightBlue(parameters!.name);
+                if (parameterOption.required) {
+                    label += blue` (required)`;
                 }
+                totalSpacing = Math.max(totalSpacing, removeHighlight(label).length);
+                message.push("", `${brightCyan`Parameters`}:`);
+                message.push(...formatHelp(label, parameterOption.help!, totalSpacing));
+            }
+
+            message.push("", `${brightCyan`Options`}:`);
+            for (const [flag, helpInfo] of optionHelpEntries) {
+                message.push(...formatHelp(flag, helpInfo, totalSpacing));
             }
 
             logger.log(message.join("\n"));
@@ -239,7 +304,7 @@ export class Command {
 
         // Generate final command arguments from option values
         const args: string[] = (await this.resolve(this.definition.defaultArgs)) || [];
-        for (const option of Object.values(this.options)) {
+        for (const option of this.options.values()) {
             if (option.definition?.flag) {
                 let flag = `--${option.definition.name}`;
                 if (option.values.length) {
@@ -257,7 +322,9 @@ export class Command {
 const helpCommandDefinition = Command.register({
     name: HELP_KEYWORD,
     options: [],
-    defaultOption: "noop",
+    parameters: {
+        name: "noop",
+    },
     async handler() {
         const message = [
             `${brightCyan`Usage`}: ${brightGreen(
@@ -266,28 +333,28 @@ const helpCommandDefinition = Command.register({
             "",
             `${brightCyan`Commands`}:`,
         ];
-        const sortedDefinitions = [...Command.definitions].sort((a, b) => a[0].localeCompare(b[0]));
-        const commandHelpParts = ["<command>", `--${HELP_KEYWORD}`];
-        const commandHelpLength = commandHelpParts.join(" ").length;
-        let longestCommand = commandHelpLength;
+        const sortedDefinitions = sorted(Command.definitions, 0);
+        const commandHelp = `${magenta`<command>`} ${brightCyan`--${HELP_KEYWORD}`}`;
+        const commandHelpLength = removeHighlight(commandHelp).length;
+        let totalSpacing = commandHelpLength;
         for (const [name] of sortedDefinitions) {
-            if (name.length > longestCommand) {
-                longestCommand = name.length;
-            }
+            totalSpacing = Math.max(totalSpacing, name.length);
         }
         for (const [name, definition] of sortedDefinitions) {
-            const spacing = longestCommand - name.length;
-            message.push(
-                `${HELP_INDENT}${brightMagenta(name)}${" ".repeat(spacing)}${HELP_INDENT}${
-                    definition.help
-                }`
-            );
+            message.push(...formatHelp(brightMagenta(name), definition.help, totalSpacing));
         }
-        const spacing = longestCommand - commandHelpLength;
+
+        // Generic "<command> --help" line
+        const commandSpacing = totalSpacing - commandHelpLength;
         message.push(
-            `${HELP_INDENT}${dim(commandHelpParts[0])} ${brightCyan(
-                commandHelpParts[1]
-            )}${" ".repeat(spacing)}${HELP_INDENT}Display help text for a specific command`
+            `${HELP_INDENT}${commandHelp}${" ".repeat(commandSpacing)}${HELP_INDENT}Display help text for a specific command`
+        );
+
+        // Version help
+        const versionOptionHelp = `-${VERSION_KEYWORD[0]}, --${VERSION_KEYWORD}`;
+        const versionSpacing = totalSpacing - versionOptionHelp.length;
+        message.push(
+            `${HELP_INDENT}${cyan(versionOptionHelp)}${" ".repeat(versionSpacing)}${HELP_INDENT}Display Odoo version`
         );
 
         logger.log(message.join("\n"));
@@ -308,5 +375,4 @@ CommandOption.register({
     short: "v",
     autoInclude: true,
     standalone: true,
-    help: ["Display Odoo version number"],
 });

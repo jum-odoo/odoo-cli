@@ -1,18 +1,18 @@
-import type { Command, CommandResolver } from "./command";
-import { ADDON_PATHS, LocalError, setDebug } from "./constants";
+import type { Command, CommandHelp, CommandResolver } from "./command";
+import { ADDON_PATHS, setDebug } from "./constants";
 import { HIGHLIGHT } from "./logger";
 import { getOdooVersion, parseAddons } from "./utils";
 
-const { brightBlue, brightCyan } = HIGHLIGHT;
+const { brightYellow } = HIGHLIGHT;
 
 export interface CommandOptionDefinition {
     autoInclude?: boolean;
     defaultValues?: CommandResolver<string[]>;
     effect?: (command: Command) => any;
     flag?: boolean;
-    help?: (string | string[])[];
+    help?: CommandHelp;
     name: string;
-    parse?: (values: string[]) => string[] | PromiseLike<string[]>;
+    parse?: (values: Iterable<string>) => Iterable<string> | PromiseLike<Iterable<string>>;
     required?: boolean;
     short?: string;
     standalone?: boolean;
@@ -75,15 +75,6 @@ export class CommandOption {
         this.type = type;
     }
 
-    addValues(...values: string[]) {
-        if (!this.acceptsValues) {
-            throw new LocalError(
-                `option ${brightCyan(this.definition.name)} does not accept any values`
-            );
-        }
-        this.values.push(...values);
-    }
-
     async applyEffect(command: Command) {
         if (this.definition?.effect) {
             await this.definition.effect(command);
@@ -92,7 +83,7 @@ export class CommandOption {
 
     async parseValues() {
         if (this.definition.parse) {
-            this.values = await this.definition.parse(this.values);
+            this.values = Array.from(await this.definition.parse(this.values));
         }
     }
 }
@@ -159,7 +150,7 @@ CommandOption.register({
     name: "community",
     standalone: true,
     effect(command) {
-        const pathOption = command.options["addons-path"];
+        const pathOption = command.getOption("addons-path");
         if (pathOption) {
             pathOption.values = [ADDON_PATHS.community];
         }
@@ -184,13 +175,13 @@ CommandOption.register({
     help: [
         "Comma-separated list of features. Possible features are:",
         [
-            `• ${brightBlue`all`}: alias for ${brightBlue`xml`},${brightBlue`reload`},${brightBlue`qweb`},${brightBlue`access`};`,
-            `• ${brightBlue`xml`}: read QWeb template from xml file directly instead of database;`,
-            `• ${brightBlue`reload`}: restart server when python file are updated (may not be detected depending on the text editor used);`,
-            `• ${brightBlue`qweb`}: break in the evaluation of QWeb template when a node contains t-debug='debugger';`,
-            `• ${brightBlue`werkzeug`}: display the full traceback on the frontend page in case of exception;`,
-            `• ${brightBlue`replica`}: simulate simulate a deployment with readonly replica;`,
-            `• ${brightBlue`access`}: log the traceback next to the AccessError when it results in a 403 - Forbidden HTTP response.`,
+            `• ${brightYellow`all`}: alias for ${brightYellow`xml`} + ${brightYellow`reload`} + ${brightYellow`qweb`} + ${brightYellow`access`};`,
+            `• ${brightYellow`xml`}: read QWeb template from xml file directly instead of database;`,
+            `• ${brightYellow`reload`}: restart server when python file are updated (may not be detected depending on the text editor used);`,
+            `• ${brightYellow`qweb`}: break in the evaluation of QWeb template when a node contains t-debug='debugger';`,
+            `• ${brightYellow`werkzeug`}: display the full traceback on the frontend page in case of exception;`,
+            `• ${brightYellow`replica`}: simulate simulate a deployment with readonly replica;`,
+            `• ${brightYellow`access`}: log the traceback next to the AccessError when it results in a 403 - Forbidden HTTP response.`,
         ],
     ],
 });

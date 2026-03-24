@@ -11,8 +11,9 @@ import {
 } from "../constants";
 import { HIGHLIGHT, logger } from "../logger";
 import { $ } from "../process";
+import { mapped, sorted } from "../utils";
 
-const { brightBlue } = HIGHLIGHT;
+const { brightGreen, brightYellow } = HIGHLIGHT;
 
 function catchMissingFile<T extends (...args: any[]) => PromiseLike<any>>(fn: T) {
     return async function (...args: Parameters<T>) {
@@ -70,7 +71,7 @@ async function writeJsConfig(source: string, destination: string) {
 
     async function gatherPaths(path: string) {
         const items = await readdir(path);
-        await Promise.all(items.map((item) => gatherPath(join(path, item))));
+        await Promise.all(mapped(items, (item) => gatherPath(join(path, item))));
     }
 
     const file = await readFile(source, "utf-8");
@@ -82,9 +83,7 @@ async function writeJsConfig(source: string, destination: string) {
     // Paths
     const pathEntries: [string, string[]][] = [];
     await Promise.all([gatherPaths(ADDON_PATHS.community), gatherPaths(ADDON_PATHS.enterprise)]);
-    config.compilerOptions.paths = Object.fromEntries(
-        pathEntries.sort((a, b) => a[0].localeCompare(b[0]))
-    );
+    config.compilerOptions.paths = Object.fromEntries(sorted(pathEntries, 0));
 
     // Type roots, include & exclude
     formatRoots(config.compilerOptions, "typeRoots");
@@ -150,24 +149,27 @@ Command.register({
                 help: [
                     "Action to perform:",
                     [
-                        `• ${brightBlue`enable`}: enable the tooling on all directories;`,
-                        `• ${brightBlue`disable`}: disable the tooling from all directories;`,
-                        `• ${brightBlue`reload`}: disable then re-enable tooling on all directories.`,
+                        `• ${brightYellow`enable`}: enable the tooling on all directories;`,
+                        `• ${brightYellow`disable`}: disable the tooling from all directories;`,
+                        `• ${brightYellow`reload`}: disable then re-enable tooling on all directories.`,
                     ],
                 ],
             },
             manager: {
                 defaultValues: ["bun"],
                 help: [
-                    `JavaScript package manager: either ${brightBlue`bun`} or ${brightBlue`npm`}`,
+                    `JavaScript package manager: either ${brightGreen`bun`} or ${brightGreen`npm`}`,
                 ],
             },
         },
     ],
-    defaultOption: "action",
+    parameters: {
+        name: "action",
+        optionName: "action",
+    },
     async handler() {
-        const action = this.options.action.values.join(" ");
-        switch (this.options.manager.values[0]) {
+        const action = this.getOptionValues("action").join(" ");
+        switch (this.getOptionValues("manager")[0]) {
             case "bun": {
                 jsRuntime = "bun";
                 jsLockFile = "bun.lock";

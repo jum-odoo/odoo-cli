@@ -24,9 +24,7 @@ const onExit = (code: number) => {
         )}s)`,
     ];
     if (children.length) {
-        logs.push(
-            `and ${yellow(children.length)} child ${plural("process", children.length, "es")}`
-        );
+        logs.push(`and ${yellow(children.length)} child ${plural("process", children, "es")}`);
         for (const child of children) {
             child.kill();
         }
@@ -72,7 +70,7 @@ export function listenOnCloseEvents() {
 export function spawnProcess(args: string[], options?: SpawnOptions) {
     const { ignoreFail } = options || {};
     const command = args.shift() || "";
-    logger.debug(`${magenta`<spawn>`} ${brightGreen(command)} ${cyan(...args)}`);
+    logger.debug(`${magenta`<spawn>`} ${brightGreen(command)} ${args.map(cyan).join(" ")}`);
     const child = spawn(command, args, { stdio: ignoreFail ? "pipe" : "inherit" });
     child.stdout?.on("data", logger.info);
     const log = ignoreFail ? logger.info : logger.error;

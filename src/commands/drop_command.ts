@@ -7,14 +7,13 @@ const { brightYellow } = HIGHLIGHT;
 Command.register({
     name: "drop",
     options: ["database"],
-    defaultOption: "database",
+    parameters: {
+        name: "database name(s)",
+        optionName: "database",
+    },
     async handler(...args) {
-        const dbNames = this.options.database.values;
-        logger.info(
-            `dropping ${plural("database", dbNames.length, "es")} ${and(dbNames, (name) =>
-                brightYellow(name)
-            )}`
-        );
+        const dbNames = this.getOptionValues("database");
+        logger.info(`dropping ${plural("database", dbNames, "es")} ${and(dbNames, brightYellow)}`);
         await dropDatabase(this, args);
     },
     help: ["Drop the given database"],

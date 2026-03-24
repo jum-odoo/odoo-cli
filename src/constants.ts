@@ -25,7 +25,6 @@ export const ADDON_PATHS = {
     ["community"]: join(COMMUNITY_PATH, "addons"),
     ["design-themes"]: join(ROOT_PATH, "design-themes"),
     ["enterprise"]: ENTERPRISE_PATH,
-    ["translate-ui"]: join(ROOT_PATH, "translate-ui"),
 };
 export const BIN_PATH = join(COMMUNITY_PATH, "odoo-bin");
 export const SRC_PATH = join("static", "src");
@@ -34,7 +33,6 @@ export const MANIFEST_FILE_NAME = "__manifest__.py";
 export const ADDON_PACKS: Record<string, string[]> = {
     default: ["crm", "planning", "project", "website"],
     livechat: ["im_livechat"],
-    sales: ["sale"],
     accounting: ["account_accountant"],
 };
 
