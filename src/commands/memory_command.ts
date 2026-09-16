@@ -51,16 +51,16 @@ function fetchSourceContents(sources: MemoryDataSource[]) {
             let rStream: Readable;
             if (RE_URL.test(url)) {
                 // Fetch source from URL
-                logger.debug(`Fetching memory logs from URL ${yellow(url)}`);
+                logger.debug(`Fetching memory logs from URL ${yellow(url)}.`);
                 let response = await fetch(url);
                 if (!response.body) {
-                    logger.warn(`No content found at URL ${yellow(url)}`);
+                    logger.warn(`No content found at URL ${yellow(url)}.`);
                     return [];
                 }
                 if (response.headers.get("content-type")?.includes("text/html")) {
                     if (source.parent) {
                         logger.warn(
-                            `Sub-sources in other sub-sources have been ignored: ${yellow(url)}`
+                            `Sub-sources in other sub-sources have been ignored: ${yellow(url)}.`
                         );
                         return [];
                     }
@@ -68,7 +68,7 @@ function fetchSourceContents(sources: MemoryDataSource[]) {
                     logger.info(
                         `↳ ${brightBlue(source.label)}: parsing ${yellow(
                             subSources.length
-                        )} memory data sub-sources`
+                        )} memory data sub-sources.`
                     );
                     const subSourceContents = await fetchSourceContents(subSources);
                     return subSourceContents.flat();
@@ -76,7 +76,7 @@ function fetchSourceContents(sources: MemoryDataSource[]) {
                 rStream = Readable.fromWeb(response.body);
             } else {
                 // Fetch source from file
-                logger.debug(`Reading memory logs from file ${cyan(url)}`);
+                logger.debug(`Reading memory logs from file ${cyan(url)}.`);
                 rStream = createReadStream(url, { encoding: "utf-8" });
             }
             return parseLogs(source, rStream);
@@ -131,6 +131,10 @@ function getSqlTimeStamp(value: string) {
     return Number(new Date(`${date}T${h}:${m}:${s}.${ms}`));
 }
 
+function parseLabel(string: string) {
+    return unquote(string).replaceAll(RE_SERIAL, () => String(nextSerial++));
+}
+
 async function parseLogs(source: MemoryDataSource, input: Readable) {
     const reader = readline.createInterface({
         input,
@@ -158,12 +162,12 @@ async function parseLogs(source: MemoryDataSource, input: Readable) {
     }
     if (data.length) {
         logger.debug(
-            `Got ${yellow(data.length)} memory readings from source ${brightBlue(source.label)}`
+            `Got ${yellow(data.length)} memory readings from source ${brightBlue(source.label)}.`
         );
     } else if (source.parent) {
-        logger.debug(`Memory log source ${brightBlue(source.label)} is empty`);
+        logger.debug(`Memory log source ${brightBlue(source.label)} is empty.`);
     } else {
-        logger.warn(`Memory log source ${brightBlue(source.label)} is empty`);
+        logger.warn(`Memory log source ${brightBlue(source.label)} is empty.`);
     }
     return data;
 }
@@ -180,7 +184,7 @@ function parseSources(sourceContent: Iterable<string>, parent?: MemoryDataSource
         let url: string;
         if (urlParts.length) {
             url = urlParts.join("=");
-            label = unquote(label);
+            label = parseLabel(label);
         } else {
             url = label;
             label = "";
@@ -217,9 +221,11 @@ function unquote(string: string) {
 }
 
 const RE_HREF_LOG_URL = /href=['"](?<url>([^'"]*\/logs\/start_\w+\.txt))['"]/gm;
+const RE_SERIAL = /#/g;
 const SUPPORTED_PRIMARY_EDITORS = ["code", "codium", "pycharm", "webstorm", "subl"];
 const SUPPORTED_BACKUP_EDITORS = ["nano", "vi", "vim", "emacs"];
 const allSources: Record<number, MemoryDataSource> = {};
+let nextSerial = 1;
 let nextSourceId = 1;
 
 const DEFAULT_LABEL = "Source";
@@ -273,7 +279,7 @@ Command.register({
     },
     async handler() {
         if (this.hasOption("edit")) {
-            logger.info("Opening source file for editing");
+            logger.info("Opening source file for editing.");
             await editMemorySources(SOURCE_PATH);
         }
 
@@ -282,7 +288,7 @@ Command.register({
             sourceContent = this.getOptionValues("sources");
         } else {
             // Get source URLs from data source file
-            logger.debug(`Reading memory logs from source file ${cyan(SOURCE_PATH)}`);
+            logger.debug(`Reading memory logs from source file ${cyan(SOURCE_PATH)}.`);
             try {
                 const sourceFileContent = await readFile(SOURCE_PATH, "utf-8");
                 sourceContent = sourceFileContent.split("\n");
@@ -304,7 +310,7 @@ Command.register({
         if (shouldReload) {
             // Force or hash changed:
             // -> fetch file sources (remotely or locally)
-            logger.info(`Parsing memory data from ${yellow(sourceEntries.length)} sources`);
+            logger.info(`Parsing memory data from ${yellow(sourceEntries.length)} sources.`);
             const data = await fetchSourceContents(sourceEntries);
             await writeFile(
                 JS_DATA_FILE,
@@ -320,7 +326,7 @@ Command.register({
         }
 
         if (!this.hasOption("noopen")) {
-            logger.info(`Opening graph view in browser`);
+            logger.info(`Opening graph view in browser.`);
             await $`open ${join(MEMORY_DATA_DIR, "index.html")}`;
         }
     },

@@ -2,6 +2,22 @@
     "use strict";
 
     /**
+     * @param {string} name
+     */
+    function bindFormControl(name) {
+        const [el] = document.getElementsByName(name);
+        const property = el.type === "checkbox" ? "checked" : "value";
+        formControls.push(el);
+        el.addEventListener("change", function onChange(ev) {
+            location.hash = formatHash({
+                ...parseHash(location.hash),
+                [name]: ev.currentTarget[property],
+            });
+        });
+        return el;
+    }
+
+    /**
      * @param {Record<string, any>} values
      */
     function formatHash(values) {
@@ -80,6 +96,7 @@
                     dataset.size
                 })`,
                 data: dataset.data,
+                ...getColor(source),
             })),
             labels: labelList,
         };
@@ -90,19 +107,14 @@
     }
 
     /**
-     * @param {string} name
+     * @param {string} label
      */
-    function bindFormControl(name) {
-        const [el] = document.getElementsByName(name);
-        const property = el.type === "checkbox" ? "checked" : "value";
-        formControls.push(el);
-        el.addEventListener("change", function onChange(ev) {
-            location.hash = formatHash({
-                ...parseHash(location.hash),
-                [name]: ev.currentTarget[property],
-            });
-        });
-        return el;
+    function getColor(label) {
+        const strLabel = String(label);
+        if (!colorsByLabel[strLabel]) {
+            colorsByLabel[strLabel] = COLORS[nextColorIndex++ % COLORS.length];
+        }
+        return colorsByLabel[strLabel];
     }
 
     function onHashChange() {
@@ -110,7 +122,6 @@
         update();
     }
 
-    let updating = 0;
     function onResize() {
         if (updating) {
             cancelAnimationFrame(updating);
@@ -146,11 +157,25 @@
         return values;
     }
 
+    /**
+     * @param {Record<string, Object>} sources
+     */
     function parseSources(sources) {
         for (const source of Object.values(sources)) {
             sources[source.id] = new MemoryDataSource(source);
         }
         return sources;
+    }
+
+    /**
+     * @param {any[]} list
+     */
+    function shuffle(list) {
+        for (let i = 0; i < list.length; i++) {
+            const j = Math.floor(Math.random() * (list.length - i)) + i;
+            [list[i], list[j]] = [list[j], list[i]];
+        }
+        return list;
     }
 
     /**
@@ -232,26 +257,6 @@
         }
     }
 
-    /** @type {HTMLCanvasElement} */
-    const canvas = document.getElementById("chart-canvas");
-    const formControls = [];
-
-    const RE_FALSY = /(false|0)/i;
-    const RE_TRUTHY = /(true|1)/i;
-
-    /** @type {HTMLInputElement} */
-    const filterInput = bindFormControl("filter");
-    /** @type {HTMLSelectElement} */
-    const metricSelect = bindFormControl("metric");
-    /** @type {HTMLInputElement} */
-    const showDesktopInput = bindFormControl("desktop");
-    /** @type {HTMLInputElement} */
-    const showMobileInput = bindFormControl("mobile");
-    /** @type {HTMLInputElement} */
-    const showVarianceInput = bindFormControl("variance");
-
-    updateFiltersFromHash();
-
     /** @type {ChartOptions} */
     const CHART_OPTIONS = {
         animation: false,
@@ -297,6 +302,70 @@
         },
         responsive: true,
     };
+    const COLORS = shuffle(
+        [
+            [88.5, 0.062, 18.334],
+            [70.4, 0.191, 22.216],
+            [90.1, 0.076, 70.697],
+            [75, 0.183, 55.934],
+            [92.4, 0.12, 95.746],
+            [82.8, 0.189, 84.429],
+            [94.5, 0.129, 101.54],
+            [85.2, 0.199, 91.936],
+            [93.8, 0.127, 124.321],
+            [84.1, 0.238, 128.85],
+            [92.5, 0.084, 155.995],
+            [79.2, 0.209, 151.711],
+            [90.5, 0.093, 164.15],
+            [76.5, 0.177, 163.223],
+            [91, 0.096, 180.426],
+            [77.7, 0.152, 181.912],
+            [91.7, 0.08, 205.041],
+            [78.9, 0.154, 211.53],
+            [90.1, 0.058, 230.902],
+            [74.6, 0.16, 232.661],
+            [88.2, 0.059, 254.128],
+            [70.7, 0.165, 254.624],
+            [87, 0.065, 274.039],
+            [67.3, 0.182, 276.935],
+            [89.4, 0.057, 293.283],
+            [70.2, 0.183, 293.541],
+            [90.2, 0.063, 306.703],
+            [71.4, 0.203, 305.504],
+            [90.3, 0.076, 319.62],
+            [74, 0.238, 322.16],
+            [89.9, 0.061, 343.231],
+            [71.8, 0.202, 349.761],
+            [89.2, 0.058, 10.001],
+            [71.2, 0.194, 13.428],
+        ].map(([L, C, H]) => ({
+            backgroundColor: `oklch(${L}% ${C} ${H})`,
+            borderColor: `oklch(${L - 5}% ${C} ${H})`,
+            color: `oklch(${L - 5}% ${C} ${H})`,
+        }))
+    );
+
+    const RE_FALSY = /(false|0)/i;
+    const RE_TRUTHY = /(true|1)/i;
+
+    const colorsByLabel = {};
+
+    /** @type {HTMLCanvasElement} */
+    const canvas = document.getElementById("chart-canvas");
+    const formControls = [];
+
+    /** @type {HTMLInputElement} */
+    const filterInput = bindFormControl("filter");
+    /** @type {HTMLSelectElement} */
+    const metricSelect = bindFormControl("metric");
+    /** @type {HTMLInputElement} */
+    const showDesktopInput = bindFormControl("desktop");
+    /** @type {HTMLInputElement} */
+    const showMobileInput = bindFormControl("mobile");
+    /** @type {HTMLInputElement} */
+    const showVarianceInput = bindFormControl("variance");
+
+    updateFiltersFromHash();
 
     // @ts-ignore
     const LOG_DATA = window.LOG_DATA || [];
@@ -304,6 +373,8 @@
     const LOG_SOURCES = parseSources(window.LOG_SOURCES || {});
 
     let chart;
+    let nextColorIndex = 0;
+    let updating = 0;
     if (LOG_DATA.length) {
         // @ts-ignore
         chart = new Chart(canvas, {

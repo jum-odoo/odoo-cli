@@ -1,5 +1,5 @@
 import type { Command, CommandHelp, CommandResolver } from "./command";
-import { ADDON_PATHS, setDebug } from "./constants";
+import { ADDON_PATHS, DEBUG_KEYWORD, setDebug } from "./constants";
 import { HIGHLIGHT } from "./logger";
 import { getOdooVersion, parseAddons } from "./utils";
 
@@ -161,10 +161,9 @@ CommandOption.register({
 });
 
 CommandOption.register({
-    name: "debug",
+    name: DEBUG_KEYWORD,
     autoInclude: true,
     standalone: true,
-    effect: () => setDebug(true),
     help: ["Log debug information and sub-commands in the console"],
 });
 

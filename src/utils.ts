@@ -10,6 +10,7 @@ import {
     LocalError,
     MANIFEST_FILE_NAME,
     RE_NON_ALPHANUM,
+    RE_ODOO_VERSION,
     RE_VALID_MODULE_NAME,
 } from "./constants";
 import { HIGHLIGHT, type Highlighter, logger } from "./logger";
@@ -64,7 +65,6 @@ const LVD_INSERT: number = 1;
 const LVD_DELETE: number = 1;
 
 const RE_CSRF_TOKEN = /csrf_token\s*:\s*['"`](?<token>\w+)['"`]/im;
-const RE_ODOO_VERSION = /(?:saas[~-])?(?<number>\d+\.\d)/;
 const RE_WILD_CARD = /\*+/g;
 const RE_WHITE_SPACE = /\s+/g;
 
@@ -116,6 +116,15 @@ export async function ensureFile(path: string, callback: () => string | Promise<
     } catch {
         const content = await callback();
         await writeFile(path, content, "utf-8");
+    }
+}
+
+export async function fileExists(path: string) {
+    try {
+        await access(path);
+        return true;
+    } catch {
+        return false;
     }
 }
 
@@ -284,7 +293,7 @@ export async function parseAddons(addonsOptionValues: Iterable<string>) {
             getErrorMessageWithHelp(
                 plural("addon", invalidAddons),
                 invalidAddons,
-                validAddons,
+                concat(Object.keys(ADDON_PACKS), validAddons),
                 brightYellow
             )
         );
@@ -327,7 +336,7 @@ export async function startServer(command: Command, args: string[]) {
     //         data.set("csrf_token", csrfToken);
     //         data.set("type", "password");
     //         data.set("redirect", "/odoo");
-    //         logger.debug("Sending login request with:", Object.fromEntries(data.entries()));
+    //         logger.debug("Sending login request with:", Object.fromEntries(data.entries()).);
     //         const postResponse = await fetch(`${LOCAL_HOST}:${port}/web/login`, {
     //             method: "POST",
     //             body: data,
@@ -344,11 +353,11 @@ export async function startServer(command: Command, args: string[]) {
 export async function startServerFromCommand(command: Command, args: string[]) {
     const dbName = command.getOptionValues("database").join(" ");
     const version = await getOdooVersion();
-    let message = `starting database ${brightYellow(dbName)}`;
+    let message = `Starting database ${brightYellow(dbName)}`;
     if (version !== dbName) {
         message += ` (Odoo version ${brightBlue(version)})`;
     }
-    logger.info(message);
+    logger.info(message + ".");
     return startServer(command, args);
 }
 

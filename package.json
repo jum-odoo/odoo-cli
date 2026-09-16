@@ -1,13 +1,13 @@
 {
     "name": "odoo-cli",
-    "description": "Set of macros and streamlined CLI options for the odoo-bin executable",
-    "type": "module",
-    "module": "./src/index.ts",
     "main": "./src/index.ts",
+    "module": "./src/index.ts",
     "devDependencies": {
         "bun-types": "latest"
     },
     "peerDependencies": {
         "typescript": "^5.0.0"
-    }
+    },
+    "description": "Set of macros and streamlined CLI options for the odoo-bin executable",
+    "type": "module"
 }

@@ -1,6 +1,6 @@
 import { exec, spawn } from "child_process";
 import { HIGHLIGHT, logger } from "./logger";
-import { plural } from "./utils";
+import { and, plural } from "./utils";
 
 const { brightCyan, brightGreen, cyan, magenta, yellow } = HIGHLIGHT;
 
@@ -19,22 +19,22 @@ const onExit = (code: number) => {
     const actualCode = lastExitCode ?? code;
     const time = ((performance.now() - startTime) << 0) / 1000;
     const logs = [
-        `exit code ${brightCyan(actualCode)} received: terminating process (total time: ${yellow(
+        `Exit code ${brightCyan(actualCode)} received: terminating process (total time: ${yellow(
             time
         )}s)`,
     ];
     if (children.length) {
-        logs.push(`and ${yellow(children.length)} child ${plural("process", children, "es")}`);
+        logs.push(`${yellow(children.length)} child ${plural("process", children, "es")}`);
         for (const child of children) {
             child.kill();
         }
     }
 
-    logger.debug(...logs);
+    logger.debug(and(logs) + ".");
     if (actualCode) {
-        logger.info(`process terminated with code ${brightCyan(actualCode)}`);
+        logger.info(`Process terminated with code ${brightCyan(actualCode)}.`);
     } else if (children.length) {
-        logger.info(`process ended`);
+        logger.info(`Process ended.`);
     }
 };
 

@@ -12,20 +12,8 @@ async function main() {
     listenOnCloseEvents();
 
     const command = parseArguments(process.argv.slice(2));
-    if (Array.isArray(command)) {
-        for (const errorMessage of command) {
-            logger.error(errorMessage);
-        }
-        return logger.log("");
-    }
 
-    const processErrors = await command.processOptions();
-    if (Array.isArray(processErrors)) {
-        for (const errorMessage of processErrors) {
-            logger.error(errorMessage);
-        }
-        return logger.log("");
-    }
+    await command.processOptions();
 
     // If the command requires a port: cleans up the given port
     if (command.hasOption("http-port")) {
@@ -38,9 +26,6 @@ async function main() {
 
 function parseArguments(args: string[]) {
     const command = Command.find(args);
-    if (typeof command === "string") {
-        return [command];
-    }
     const params: string[] = [];
     const invalidOptions: Set<string> = new Set();
     for (const rawArg of args) {
@@ -78,18 +63,18 @@ function parseArguments(args: string[]) {
     }
     if (invalidOptions.size) {
         const list = [...invalidOptions];
-        return [
-            `unknown ${plural("option", list)} for command ${brightMagenta(command.definition.name)}: ${and(list, brightRed)}`,
-        ];
+        throw new LocalError(
+            `unknown ${plural("option", list)} for command ${brightMagenta(command.definition.name)}: ${and(list, brightRed)}.`
+        );
     }
     if (params.length) {
         const { parameters } = command.definition;
         if (!parameters) {
-            return [
+            throw new LocalError(
                 `command ${brightMagenta(
                     command.definition.name
-                )} does not accept parameters; received: ${and(params, brightRed)}.`,
-            ];
+                )} does not accept parameters; received: ${and(params, brightRed)}.`
+            );
         }
         if (parameters.optionName) {
             // Only registers option if specified on parameters;
@@ -104,7 +89,7 @@ async function stopProcessesOnPorts(ports: string[]) {
     const strPorts = sorted(ports).join(",");
     try {
         await $`lsof -ti :${strPorts} | xargs kill -9`;
-        logger.info(`terminated existing processes listening on port(s): ${strPorts}`);
+        logger.info(`Terminated existing processes listening on port(s): ${strPorts}.`);
     } catch {
         // Command failed: (probably) due to no pIds found
     }

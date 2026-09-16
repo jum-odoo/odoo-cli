@@ -18,7 +18,7 @@ Command.register({
         // Drop
         await dropDatabase(this, args);
         logger.info(
-            `creating new ${plural("database", dbNames, "es")} ${and(dbNames, brightYellow)}`
+            `Creating new ${plural("database", dbNames, "es")} ${and(dbNames, brightYellow)}.`
         );
         // Create
         await Promise.all(mapped(dbNames, (dbName) => $`createdb ${dbName}`.catch(warnError)));

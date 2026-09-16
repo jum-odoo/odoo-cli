@@ -1,5 +1,13 @@
 import { CommandOption, CommandOptionType, type CommandOptionDefinition } from "./command_options";
-import { START_COMMAND } from "./constants";
+import {
+    DEBUG_KEYWORD,
+    EXECUTABLE_NAME,
+    HELP_KEYWORD,
+    LocalError,
+    setDebug,
+    START_COMMAND,
+    VERSION_KEYWORD,
+} from "./constants";
 import { HIGHLIGHT, logger, removeHighlight } from "./logger";
 import {
     and,
@@ -59,11 +67,8 @@ function* formatHelp(
     }
 }
 
-const EXECUTABLE_NAME = "odoo";
-const HELP_KEYWORD = "help";
 const HELP_INDENT = "  ";
 const OPTION_VALUE_SUFFIX = "=<val>";
-const VERSION_KEYWORD = "version";
 
 // NOT declared with `Command.register` because it shouldn't be listed as a regular command.
 const versionCommandDefinition: CommandDefinition = {
@@ -98,11 +103,13 @@ export class Command {
                 aliases[desc.alias] = desc;
             }
             if (!commandDefinition) {
-                return getErrorMessageWithHelp(
-                    "command",
-                    [name],
-                    Object.keys(aliases).concat(...this.definitions.keys()),
-                    brightMagenta
+                throw new LocalError(
+                    getErrorMessageWithHelp(
+                        "command",
+                        [name],
+                        Object.keys(aliases).concat(...this.definitions.keys()),
+                        brightMagenta
+                    )
                 );
             }
         }
@@ -169,6 +176,7 @@ export class Command {
 
         // Auto-complete default options & check missing required options
         const missingRequiredOptions: string[] = [];
+        const defaultOptionValues: [string, CommandResolver<string[]>][] = [];
         for (const optionDefinition of this.definition.options) {
             const { defaultValues, name, required } = optionDefinition;
             if (this.hasOption(name)) {
@@ -176,7 +184,7 @@ export class Command {
             }
             if (defaultValues) {
                 // Option has a default value
-                this.registerOption(name, "long", await this.resolve(defaultValues));
+                defaultOptionValues.push([name, defaultValues]);
             } else if (required) {
                 // Option is required
                 missingRequiredOptions.push(name);
@@ -184,24 +192,40 @@ export class Command {
         }
 
         if (missingRequiredOptions.length) {
-            return [
-                `missing required ${plural("option", missingRequiredOptions)}: ${and(missingRequiredOptions, brightRed)}.`,
-            ];
+            throw new LocalError(
+                `missing required ${plural("option", missingRequiredOptions)}: ${and(missingRequiredOptions, brightRed)}`
+            );
         }
 
-        // Parse option values (in parallel)
+        /**
+         * Parsing values may generate errors: do it *before* applying default values,
+         * which is more costly (c.f. Odoo version)
+         */
+        // 1. Parse given values
         await Promise.all(mapped(this.options.values(), (option) => option.parseValues()));
 
-        // Apply option effects (sequentially)
-        for (const option of this.options.values()) {
-            await option.applyEffect(this);
-        }
+        // 2. Compute default values
+        await Promise.all(
+            mapped(defaultOptionValues, async ([name, defaultValues]) => {
+                this.registerOption(name, "long", await this.resolve(defaultValues));
+            })
+        );
+
+        // 3. Apply option effects after default values have been set
+        await Promise.all(mapped(this.options.values(), (option) => option.applyEffect(this)));
     }
 
     registerOption(optionName: string, type: CommandOptionType, values: string[]) {
         if (this.definition.name === HELP_KEYWORD) {
             return true;
         }
+
+        if (optionName === DEBUG_KEYWORD) {
+            // Special case: debug option sets the "debug" flag early on, even if
+            // its format is misused.
+            setDebug();
+        }
+
         const lower = optionName.toLowerCase();
         let optionDefinition = this.definition.options.find(
             (option) => option.short === optionName || (type === "long" && option.name === lower)
@@ -226,6 +250,7 @@ export class Command {
             }
             definition.values.push(...filteredValues);
         }
+
         return true;
     }
 

@@ -13,7 +13,7 @@ Command.register({
     },
     async handler(...args) {
         const dbNames = this.getOptionValues("database");
-        logger.info(`dropping ${plural("database", dbNames, "es")} ${and(dbNames, brightYellow)}`);
+        logger.info(`Dropping ${plural("database", dbNames, "es")} ${and(dbNames, brightYellow)}.`);
         await dropDatabase(this, args);
     },
     help: ["Drop the given database"],

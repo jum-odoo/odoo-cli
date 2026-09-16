@@ -11,7 +11,7 @@ Command.register({
     async handler(...args) {
         const [port] = this.getOptionValues("http-port");
         await startServer(this, args);
-        logger.info("Opening database manager");
+        logger.info("Opening database manager.");
         await $`open ${LOCAL_HOST}:${port}/web/database/manager`;
     },
     help: ["Open the database manager"],
