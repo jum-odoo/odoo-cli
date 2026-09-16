@@ -48,8 +48,9 @@ export const ROOT_PATH = join(homedir(), "odoo");
 let comPath = join(ROOT_PATH, "community");
 let entPath = join(ROOT_PATH, "enterprise");
 for (const repoPath of [comPath, entPath]) {
-    if (CWD.startsWith(repoPath) && CWD.length > repoPath.length) {
-        const [rootDir] = CWD.slice(repoPath.length).split(sep).filter(Boolean);
+    const repoPathPrefix = repoPath + sep;
+    if (CWD.startsWith(repoPathPrefix)) {
+        const [rootDir] = CWD.slice(repoPathPrefix.length).split(sep).filter(Boolean);
         if (rootDir === "master" || RE_ODOO_VERSION.test(rootDir)) {
             comPath = join(comPath, rootDir);
             entPath = join(entPath, rootDir);

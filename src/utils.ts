@@ -9,7 +9,6 @@ import {
     LOCALE,
     LocalError,
     MANIFEST_FILE_NAME,
-    RE_NON_ALPHANUM,
     RE_ODOO_VERSION,
     RE_VALID_MODULE_NAME,
 } from "./constants";
@@ -17,11 +16,6 @@ import { HIGHLIGHT, type Highlighter, logger } from "./logger";
 import { $, spawnProcess } from "./process";
 
 const { brightBlue, brightRed, brightYellow } = HIGHLIGHT;
-
-function getCsrfTokenFromHtml(html: string) {
-    const match = html.match(RE_CSRF_TOKEN);
-    return match?.groups?.token || null;
-}
 
 async function getPathModules(path: string) {
     const pathModules: Set<string> = new Set();
@@ -64,7 +58,6 @@ const LVD_REPLACE: number = 1.5;
 const LVD_INSERT: number = 1;
 const LVD_DELETE: number = 1;
 
-const RE_CSRF_TOKEN = /csrf_token\s*:\s*['"`](?<token>\w+)['"`]/im;
 const RE_WILD_CARD = /\*+/g;
 const RE_WHITE_SPACE = /\s+/g;
 
@@ -94,7 +87,7 @@ export function* concat<T>(...iterables: Iterable<T>[]) {
     }
 }
 
-export async function dropDatabase(command: Command, args: string[]) {
+export async function dropDatabase(command: Command) {
     await Promise.all(
         mapped(command.getOptionValues("database"), (dbName) =>
             $`dropdb -f ${dbName}`.catch(warnError)
@@ -144,14 +137,17 @@ export function formatError(error: Error | string | null) {
         message = String(error ?? "error");
     }
     return [
-        ...mapped(filtered(message.split("\n"), Boolean), (line) => {
-            const trimmedLine = line.trim();
-            if (trimmedLine.startsWith("Command failed:")) {
-                return "";
-            } else {
-                return trimmedLine.replaceAll(RE_WHITE_SPACE, " ");
-            }
-        }),
+        ...filtered(
+            mapped(filtered(message.split("\n"), Boolean), (line) => {
+                const trimmedLine = line.trim();
+                if (trimmedLine.startsWith("Command failed:")) {
+                    return "";
+                } else {
+                    return trimmedLine.replaceAll(RE_WHITE_SPACE, " ");
+                }
+            }),
+            Boolean
+        ),
     ].join("\n");
 }
 
@@ -257,10 +253,13 @@ export async function parseAddons(addonsOptionValues: Iterable<string>) {
     const addonValues = [...addonsOptionValues].flatMap((v) => v.trim().split(/\s*,\s*/g));
     for (const addon of addonValues) {
         if (addon === "all") {
-            return filtered(
+            for (const validAddon of filtered(
                 validAddons,
                 (addon) => !addon.startsWith("l10n_") || addon.startsWith("l10n_be")
-            );
+            )) {
+                addons.add(validAddon);
+            }
+            continue;
         }
         if (addon in ADDON_PACKS) {
             for (const packAddon of ADDON_PACKS[addon]) {
@@ -321,33 +320,12 @@ export function sorted<T>(iterable: Iterable<T>, property?: keyof T) {
 }
 
 export async function startServer(command: Command, args: string[]) {
-    spawnProcess(["python3", BIN_PATH, ...args]);
+    const serverPromise = spawnProcess(["python3", BIN_PATH, ...args]).catch(warnError);
     const [port] = command.getOptionValues("http-port");
-    // TODO: not working :(
-    // if (command.hasOption("login")) {
-    //     const login = command.getOptionValues("login").join(" ");
-    //     setTimeout(async () => {
-    //         const getResponse = await fetch(`${LOCAL_HOST}:${port}/web/login`, { method: "GET" });
-    //         const text = await getResponse.text();
-    //         const csrfToken = getCsrfTokenFromHtml(text);
-    //         const data = new FormData();
-    //         data.set("login", login);
-    //         data.set("password", login);
-    //         data.set("csrf_token", csrfToken);
-    //         data.set("type", "password");
-    //         data.set("redirect", "/odoo");
-    //         logger.debug("Sending login request with:", Object.fromEntries(data.entries()).);
-    //         const postResponse = await fetch(`${LOCAL_HOST}:${port}/web/login`, {
-    //             method: "POST",
-    //             body: data,
-    //             headers: getResponse.headers,
-    //         });
-    //         logger.info(postResponse);
-    //     }, 1000);
-    // }
     if (command.hasOption("open")) {
         await $`open ${LOCAL_HOST}:${port}/web?debug=assets`;
     }
+    await serverPromise;
 }
 
 export async function startServerFromCommand(command: Command, args: string[]) {
@@ -368,7 +346,10 @@ export function warnError(error: any) {
 export async function withDemoData(this: Command) {
     const version = await getOdooVersion();
     if (version !== "master") {
-        const nVersion = Number(version?.split(".")[0].replaceAll(RE_NON_ALPHANUM, ""));
+        // Extract the major version number regardless of a "saas-" prefix
+        // (e.g. "saas-19.1" -> 19), rather than choking on the leading "saas".
+        const match = version?.match(RE_ODOO_VERSION);
+        const nVersion = match?.groups?.number ? Number(match.groups.number.split(".")[0]) : 0;
         if (!nVersion || nVersion < 19) {
             // With <19 or unrecognized version: use "without-demo" (legacy)
             return ["--without-demo=False"];

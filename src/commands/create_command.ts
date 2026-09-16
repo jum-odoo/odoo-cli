@@ -12,11 +12,11 @@ Command.register({
         name: "database name(s)",
         optionName: "database",
     },
-    options: ["*"],
-    async handler(...args) {
+    options: ["database"],
+    async handler() {
         const dbNames = this.getOptionValues("database");
         // Drop
-        await dropDatabase(this, args);
+        await dropDatabase(this);
         logger.info(
             `Creating new ${plural("database", dbNames, "es")} ${and(dbNames, brightYellow)}.`
         );

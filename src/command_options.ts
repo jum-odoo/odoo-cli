@@ -205,8 +205,3 @@ CommandOption.register({
     standalone: true,
     help: ["Open Odoo in the default browser"],
 });
-
-// CommandOption.register({
-//     name: "login",
-//     help: ["Not working ATM"],
-// });

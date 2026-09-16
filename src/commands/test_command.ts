@@ -9,7 +9,7 @@ Command.register({
         {
             ["test-tags"]: {
                 flag: true,
-                short: "tag",
+                short: "t",
                 required: true,
                 help: [
                     "Comma-separated list of specs to filter which tests to execute. Enable unit tests if set",

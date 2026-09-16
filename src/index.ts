@@ -32,7 +32,9 @@ function parseArguments(args: string[]) {
         if (!rawArg) {
             continue;
         }
-        const [arg, argValue] = rawArg.split("=");
+        const eqIndex = rawArg.indexOf("=");
+        const arg = eqIndex < 0 ? rawArg : rawArg.slice(0, eqIndex);
+        const argValue = eqIndex < 0 ? "" : rawArg.slice(eqIndex + 1);
         // Check for "full" match
         const fullMatch = arg.match(RE_FULL_MATCH);
         if (fullMatch?.groups?.name) {

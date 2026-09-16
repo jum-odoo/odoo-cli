@@ -157,7 +157,7 @@ export class Command {
                 this.definition = helpCommandDefinition;
                 this.options.clear();
             } else {
-                for (const name in this.options.keys()) {
+                for (const name of this.options.keys()) {
                     if (name !== HELP_KEYWORD) {
                         this.options.delete(name);
                     }
@@ -227,17 +227,11 @@ export class Command {
         }
 
         const lower = optionName.toLowerCase();
-        let optionDefinition = this.definition.options.find(
+        const optionDefinition = this.definition.options.find(
             (option) => option.short === optionName || (type === "long" && option.name === lower)
         );
         if (!optionDefinition) {
-            if (type === "short") {
-                return false;
-            }
-            optionDefinition = {
-                name: optionName,
-                flag: true,
-            };
+            return false;
         }
         if (!this.hasOption(optionDefinition.name)) {
             this.options.set(optionDefinition.name, new CommandOption(optionDefinition, type));

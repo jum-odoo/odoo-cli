@@ -155,13 +155,7 @@ async function _enable(rootPath: string) {
     // Install dependencies
     const jsLockPath = join(rootPath, jsLockFile);
     const lockFileExists = await fileExists(jsLockPath);
-    try {
-        await $`cd ${rootPath} && ${jsRuntime} install`;
-    } catch (err: any) {
-        if (!String(err).includes("Resolved")) {
-            throw err;
-        }
-    }
+    await $`cd ${rootPath} && ${jsRuntime} install`;
     if (!lockFileExists) {
         // Remove .lock file if it did not exist already, to avoid useless diff
         await remove(jsLockPath);

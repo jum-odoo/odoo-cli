@@ -18,7 +18,7 @@ function makeHighlighter(...styles: (keyof typeof CONSOLE_HIGHLIGHTS)[]): Highli
     return function wrapColor(template, ...substitutions) {
         const str =
             template && typeof template === "object" && template.raw
-                ? String.raw(template, substitutions)
+                ? String.raw(template, ...substitutions)
                 : template;
         return styleStr + str + CONSOLE_HIGHLIGHTS.reset;
     };

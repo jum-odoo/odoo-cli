@@ -11,10 +11,10 @@ Command.register({
         name: "database name(s)",
         optionName: "database",
     },
-    async handler(...args) {
+    async handler() {
         const dbNames = this.getOptionValues("database");
         logger.info(`Dropping ${plural("database", dbNames, "es")} ${and(dbNames, brightYellow)}.`);
-        await dropDatabase(this, args);
+        await dropDatabase(this);
     },
     help: ["Drop the given database"],
 });
