@@ -6,6 +6,7 @@ Command.register({
     name: START_COMMAND,
     alias: "start",
     defaultArgs: withDemoData,
+    forwardUnknownOptions: true,
     options: ["*"],
     parameters: {
         name: "addons",

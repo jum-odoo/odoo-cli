@@ -4,6 +4,7 @@ import { startServerFromCommand } from "../utils";
 Command.register({
     name: "test",
     defaultArgs: ["--log-level", "test", "--stop-after-init", "--test-enable"],
+    forwardUnknownOptions: true,
     options: [
         "*",
         {

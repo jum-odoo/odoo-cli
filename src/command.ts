@@ -13,10 +13,12 @@ import {
     and,
     filtered,
     getErrorMessageWithHelp,
+    getOdooBinOptions,
     getOdooVersion,
     mapped,
     plural,
     sorted,
+    wrapText,
 } from "./utils";
 
 export type CommandHelp = (string | string[])[];
@@ -26,9 +28,20 @@ export interface CommandParameters {
     optionName?: string;
 }
 
+/** A single row of a command's `--help` "Options:" listing, whichever source it came from. */
+interface HelpOptionEntry {
+    help: CommandHelp;
+    /** Sort/dedup key: the primary long flag name, without its `--` prefix. */
+    name: string;
+    longFlags: string[];
+    short?: string;
+    standalone: boolean;
+}
+
 export interface CommandDefinition {
     alias?: string;
     defaultArgs?: CommandResolver<string[]>;
+    forwardUnknownOptions?: boolean;
     handler: CommandHandler;
     help: CommandHelp;
     name: string;
@@ -227,11 +240,15 @@ export class Command {
         }
 
         const lower = optionName.toLowerCase();
-        const optionDefinition = this.definition.options.find(
+        let optionDefinition = this.definition.options.find(
             (option) => option.short === optionName || (type === "long" && option.name === lower)
         );
         if (!optionDefinition) {
-            return false;
+            if (type !== "long" || !this.definition.forwardUnknownOptions) {
+                return false;
+            }
+            // Unrecognized long option on a forwarding command: pass it through to odoo-bin as-is.
+            optionDefinition = { name: lower, flag: true, forwarded: true };
         }
         if (!this.hasOption(optionDefinition.name)) {
             this.options.set(optionDefinition.name, new CommandOption(optionDefinition, type));
@@ -269,37 +286,62 @@ export class Command {
             }
 
             let parameterOption!: CommandOptionDefinition;
-            let hasShort = false;
-            const filteredOptions = mapped(
-                filtered(this.definition.options, (option) => option.help),
-                (option) => {
-                    hasShort ||= !!option.short;
-                    if (option.name === parameters?.optionName) {
-                        parameterOption = option;
-                        option = Object.create(option);
-                        option.help = [
-                            dim`Option form of the ` +
-                                brightBlue(parameters.name) +
-                                dim` parameter; look up above for more information`,
-                        ];
-                    }
-                    return option;
+            const entries: HelpOptionEntry[] = [];
+            for (const option of filtered(this.definition.options, (option) => option.help)) {
+                let help = option.help!;
+                if (option.name === parameters?.optionName) {
+                    parameterOption = option;
+                    help = [
+                        dim`Option form of the ` +
+                            brightBlue(parameters.name) +
+                            dim` parameter; look up above for more information`,
+                    ];
                 }
-            );
+                entries.push({
+                    name: option.name,
+                    short: option.short,
+                    longFlags: [`--${option.name}`],
+                    standalone: !!option.standalone,
+                    help,
+                });
+            }
 
-            const sortedOptions = sorted(filteredOptions, "name");
-            const shortIndent = hasShort ? " ".repeat(4) : "";
-            let totalSpacing = 0;
-            const optionHelpEntries = sortedOptions.map((option) => {
-                const longFlag = `--${option.name}`;
-                let optionFlags = option.short
-                    ? `-${option.short}, ` + longFlag
-                    : shortIndent + longFlag;
-                if (!option.standalone) {
-                    optionFlags += dim(OPTION_VALUE_SUFFIX);
+            // Options odoo-cli doesn't model itself are pulled live from odoo-bin's own option
+            // parser (see `getOdooBinOptions`) instead of being duplicated/hard-coded here, so
+            // this list can never drift from what odoo-bin actually accepts. Anything odoo-cli
+            // already defines above (matched by long flag name) is skipped to avoid double entries.
+            if (this.definition.forwardUnknownOptions) {
+                const knownNames = new Set(mapped(entries, (entry) => entry.name));
+                for (const binOption of await getOdooBinOptions()) {
+                    const names = binOption.long.map((flag) =>
+                        flag.replace(/^--/, "").toLowerCase()
+                    );
+                    if (!names.length || names.some((name) => knownNames.has(name))) {
+                        continue;
+                    }
+                    for (const name of names) {
+                        knownNames.add(name);
+                    }
+                    entries.push({
+                        name: names[0],
+                        short: binOption.short[0]?.replace(/^-/, ""),
+                        longFlags: binOption.long,
+                        standalone: !binOption.takesValue,
+                        help: wrapText(binOption.help),
+                    });
                 }
+            }
+
+            const sortedEntries = sorted(entries, "name");
+            const shortIndent = sortedEntries.some((entry) => entry.short) ? " ".repeat(4) : "";
+            let totalSpacing = 0;
+            const optionHelpEntries = sortedEntries.map((entry) => {
+                let optionFlags = entry.short ? `-${entry.short}, ` : shortIndent;
+                optionFlags += entry.longFlags
+                    .map((longFlag) => longFlag + (entry.standalone ? "" : dim(OPTION_VALUE_SUFFIX)))
+                    .join(", ");
                 totalSpacing = Math.max(totalSpacing, removeHighlight(optionFlags).length);
-                return [cyan(optionFlags), option.help!] as [string, CommandHelp];
+                return [cyan(optionFlags), entry.help] as [string, CommandHelp];
             });
 
             if (parameterOption) {
@@ -315,6 +357,13 @@ export class Command {
             message.push("", `${brightCyan`Options`}:`);
             for (const [flag, helpInfo] of optionHelpEntries) {
                 message.push(...formatHelp(flag, helpInfo, totalSpacing));
+            }
+
+            if (this.definition.forwardUnknownOptions) {
+                message.push(
+                    "",
+                    dim`Options above not defined by ${EXECUTABLE_NAME} itself are forwarded straight to odoo-bin and require the --name=value form; space-separated values only work for ${EXECUTABLE_NAME}'s own options.`
+                );
             }
 
             logger.log(message.join("\n"));

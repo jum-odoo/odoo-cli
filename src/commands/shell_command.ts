@@ -5,6 +5,7 @@ Command.register({
     name: "shell",
     alias: "sh",
     defaultArgs: ["shell"],
+    forwardUnknownOptions: true,
     options: [
         "*",
         {

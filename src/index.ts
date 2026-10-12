@@ -2,7 +2,7 @@ import { Command } from "./command";
 import { LocalError, RE_FULL_MATCH, RE_SHORT_MATCH } from "./constants";
 import { HIGHLIGHT, logger } from "./logger";
 import { $, listenOnCloseEvents } from "./process";
-import { and, plural, sorted } from "./utils";
+import { and, getEffectiveHttpPort, plural, sorted } from "./utils";
 
 import "./commands/index";
 
@@ -15,9 +15,10 @@ async function main() {
 
     await command.processOptions();
 
-    // If the command requires a port: cleans up the given port
-    if (command.hasOption("http-port")) {
-        await stopProcessesOnPorts(command.getOptionValues("http-port"));
+    // If the command supports a port (whether given, defaulted from odoo.conf, or hardcoded):
+    // cleans up whatever is already listening on it
+    if (command.definition.options.some((option) => option.name === "http-port")) {
+        await stopProcessesOnPorts([await getEffectiveHttpPort(command)]);
     }
 
     // Run command
@@ -55,9 +56,12 @@ function parseArguments(args: string[]) {
             }
             continue;
         }
-        // No match: either push value to last option, or to the trailing values
+        // No match: either push value to last option, or to the trailing values. A forwarded
+        // (unrecognized, passed-through) option never absorbs a following bare value this way —
+        // we don't know if it's a boolean odoo-bin flag or a value one, so only `--name=value`
+        // is supported for those; a bare token after one falls through as a positional/param.
         const lastOption = [...command.options.values()].pop();
-        if (lastOption?.acceptsValues) {
+        if (lastOption?.acceptsValues && !lastOption.definition.forwarded) {
             lastOption.values.push(rawArg);
         } else {
             params.push(rawArg);

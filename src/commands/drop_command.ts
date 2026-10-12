@@ -1,6 +1,6 @@
 import { Command } from "../command";
 import { HIGHLIGHT, logger } from "../logger";
-import { and, dropDatabase, plural } from "../utils";
+import { and, dropDatabase, getEffectiveDatabase, plural } from "../utils";
 
 const { brightYellow } = HIGHLIGHT;
 
@@ -12,7 +12,7 @@ Command.register({
         optionName: "database",
     },
     async handler() {
-        const dbNames = this.getOptionValues("database");
+        const dbNames = await getEffectiveDatabase(this);
         logger.info(`Dropping ${plural("database", dbNames, "es")} ${and(dbNames, brightYellow)}.`);
         await dropDatabase(this);
     },

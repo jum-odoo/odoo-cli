@@ -5,6 +5,9 @@ import {
     ADDON_PACKS,
     ADDON_PATHS,
     BIN_PATH,
+    COMMUNITY_PATH,
+    CONFIG_PATH,
+    DEFAULT_HTTP_PORT,
     LOCAL_HOST,
     LOCALE,
     LocalError,
@@ -13,7 +16,7 @@ import {
     RE_VALID_MODULE_NAME,
 } from "./constants";
 import { HIGHLIGHT, type Highlighter, logger } from "./logger";
-import { $, spawnProcess } from "./process";
+import { $, evalPython, spawnProcess } from "./process";
 
 const { brightBlue, brightRed, brightYellow } = HIGHLIGHT;
 
@@ -88,11 +91,8 @@ export function* concat<T>(...iterables: Iterable<T>[]) {
 }
 
 export async function dropDatabase(command: Command) {
-    await Promise.all(
-        mapped(command.getOptionValues("database"), (dbName) =>
-            $`dropdb -f ${dbName}`.catch(warnError)
-        )
-    );
+    const dbNames = await getEffectiveDatabase(command);
+    await Promise.all(mapped(dbNames, (dbName) => $`dropdb -f ${dbName}`.catch(warnError)));
 }
 
 export async function ensureDirectory(path: string) {
@@ -321,15 +321,15 @@ export function sorted<T>(iterable: Iterable<T>, property?: keyof T) {
 
 export async function startServer(command: Command, args: string[]) {
     const serverPromise = spawnProcess(["python3", BIN_PATH, ...args]).catch(warnError);
-    const [port] = command.getOptionValues("http-port");
     if (command.hasOption("open")) {
+        const port = await getEffectiveHttpPort(command);
         await $`open ${LOCAL_HOST}:${port}/web?debug=assets`;
     }
     await serverPromise;
 }
 
 export async function startServerFromCommand(command: Command, args: string[]) {
-    const dbName = command.getOptionValues("database").join(" ");
+    const dbName = (await getEffectiveDatabase(command)).join(" ");
     const version = await getOdooVersion();
     let message = `Starting database ${brightYellow(dbName)}`;
     if (version !== dbName) {
@@ -368,3 +368,164 @@ export const getOdooVersion = asyncMemoize(async () => {
     }
     return versionNumber.endsWith(".0") ? versionNumber : `saas-${versionNumber}`;
 });
+
+export interface OdooBinOptionInfo {
+    /** All long flag spellings (e.g. `["--stop", "--stop-after-init"]`), each already `--`-prefixed. */
+    long: string[];
+    /** All short flag spellings (e.g. `["-i"]`), each already `-`-prefixed. Usually at most one. */
+    short: string[];
+    /** Whether the option takes a value (vs. a plain boolean/store_true-style flag). */
+    takesValue: boolean;
+    help: string;
+    metavar: string;
+}
+
+/**
+ * Introspects odoo-bin's own `optparse` option parser (`odoo.tools.config`) directly through
+ * Python, rather than hard-coding or regex-scraping its `--help` text: `odoo.tools.config.config`
+ * is the same singleton `configmanager()` odoo-bin itself uses, already built (`self.parser =
+ * self._build_cli()`) as soon as the module is imported, with no need to touch argv or a real
+ * database. Options that odoo-bin itself hides from `--help` (`help=optparse.SUPPRESS_HELP`, used
+ * for config-file-only settings) are skipped the same way odoo-bin's own formatter skips them, so
+ * this always matches `odoo-bin server --help` exactly, for whichever version worktree is active.
+ */
+const ODOO_BIN_OPTIONS_SCRIPT = `
+import json, optparse, sys
+from odoo.tools.config import config
+
+def _info(opt):
+    if opt.help is None or opt.help == optparse.SUPPRESS_HELP:
+        return None
+    return {
+        "short": list(opt._short_opts),
+        "long": list(opt._long_opts),
+        "metavar": opt.metavar or "",
+        "help": opt.help,
+        "takesValue": opt.takes_value(),
+    }
+
+options = []
+for opt in config.parser.option_list:
+    info = _info(opt)
+    if info:
+        options.append(info)
+for group in config.parser.option_groups:
+    for opt in group.option_list:
+        info = _info(opt)
+        if info:
+            options.append(info)
+
+json.dump(options, sys.stdout)
+`.trim();
+
+export const getOdooBinOptions = asyncMemoize(async (): Promise<OdooBinOptionInfo[]> => {
+    try {
+        const stdout = await evalPython(ODOO_BIN_OPTIONS_SCRIPT, {
+            ...process.env,
+            PYTHONPATH: COMMUNITY_PATH,
+        });
+        return JSON.parse(stdout);
+    } catch (error) {
+        logger.debug(formatError(error));
+        logger.warn(
+            `Could not import odoo from ${brightBlue(COMMUNITY_PATH)} to list its own options; showing only ${brightYellow`odoo-cli`}'s own options.`
+        );
+        return [];
+    }
+});
+
+/** Greedily wraps `text` to `width` columns on word boundaries; used for odoo-bin's own help strings, which arrive as a single unwrapped paragraph. */
+export function wrapText(text: string, width = 78): string[] {
+    const words = text.replaceAll(RE_WHITE_SPACE, " ").trim().split(" ");
+    const lines: string[] = [];
+    let line = "";
+    for (const word of words) {
+        if (line && line.length + 1 + word.length > width) {
+            lines.push(line);
+            line = word;
+        } else {
+            line = line ? `${line} ${word}` : word;
+        }
+    }
+    if (line) {
+        lines.push(line);
+    }
+    return lines;
+}
+
+function parseOdooConfig(content: string) {
+    const values = new Map<string, string>();
+    let inOptionsSection = false;
+    for (const rawLine of content.split("\n")) {
+        const line = rawLine.trim();
+        if (!line || line.startsWith("#") || line.startsWith(";")) {
+            continue;
+        }
+        const sectionMatch = line.match(/^\[(?<name>.+)\]$/);
+        if (sectionMatch) {
+            inOptionsSection = sectionMatch.groups?.name === "options";
+            continue;
+        }
+        const eqIndex = line.indexOf("=");
+        if (!inOptionsSection || eqIndex < 0) {
+            continue;
+        }
+        values.set(line.slice(0, eqIndex).trim(), line.slice(eqIndex + 1).trim());
+    }
+    return values;
+}
+
+/** Reads this worktree's `odoo.conf` at most once per process; empty map if it doesn't exist yet. */
+export const readOdooConfig = asyncMemoize(async () => {
+    try {
+        return parseOdooConfig(await readFile(CONFIG_PATH, "utf-8"));
+    } catch {
+        return new Map<string, string>();
+    }
+});
+
+export async function getConfigValue(key: string) {
+    return (await readOdooConfig()).get(key);
+}
+
+/**
+ * Creates this worktree's `odoo.conf` with the defaults odoo-cli used to hardcode, if it doesn't
+ * exist yet. Never overwrites an existing file, so manual customizations (e.g. a custom db_name)
+ * are preserved.
+ */
+export async function ensureOdooConfig() {
+    if (await fileExists(CONFIG_PATH)) {
+        return;
+    }
+    const content = [
+        "[options]",
+        `db_name = ${await getOdooVersion()}`,
+        `addons_path = ${Object.values(ADDON_PATHS).join(",")}`,
+        `http_port = ${DEFAULT_HTTP_PORT}`,
+        "dev_mode = all",
+        "",
+    ].join("\n");
+    await writeFile(CONFIG_PATH, content, "utf-8");
+}
+
+/** The database name(s) that will actually be used: given `-d`, else odoo.conf's `db_name`, else the version. */
+export async function getEffectiveDatabase(command: Command) {
+    const values = command.getOptionValues("database");
+    if (values.length) {
+        return values;
+    }
+    const configured = await getConfigValue("db_name");
+    if (configured) {
+        return configured
+            .split(",")
+            .map((value) => value.trim())
+            .filter(Boolean);
+    }
+    return [await getOdooVersion()];
+}
+
+/** The HTTP port that will actually be used: given `-p`, else odoo.conf's `http_port`, else the default. */
+export async function getEffectiveHttpPort(command: Command) {
+    const [port] = command.getOptionValues("http-port");
+    return port || (await getConfigValue("http_port")) || DEFAULT_HTTP_PORT;
+}

@@ -1,7 +1,15 @@
 import { Command } from "../command";
 import { HIGHLIGHT, logger } from "../logger";
 import { $ } from "../process";
-import { and, dropDatabase, mapped, plural, warnError, withDemoData } from "../utils";
+import {
+    and,
+    dropDatabase,
+    getEffectiveDatabase,
+    mapped,
+    plural,
+    warnError,
+    withDemoData,
+} from "../utils";
 
 const { brightYellow } = HIGHLIGHT;
 
@@ -14,7 +22,7 @@ Command.register({
     },
     options: ["database"],
     async handler() {
-        const dbNames = this.getOptionValues("database");
+        const dbNames = await getEffectiveDatabase(this);
         // Drop
         await dropDatabase(this);
         logger.info(

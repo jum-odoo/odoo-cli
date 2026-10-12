@@ -1,15 +1,14 @@
 import type { Command, CommandHelp, CommandResolver } from "./command";
-import { ADDON_PATHS, DEBUG_KEYWORD, setDebug } from "./constants";
-import { HIGHLIGHT } from "./logger";
-import { getOdooVersion, parseAddons } from "./utils";
-
-const { brightYellow } = HIGHLIGHT;
+import { ADDON_PATHS, CONFIG_PATH, DEBUG_KEYWORD, setDebug } from "./constants";
+import { ensureOdooConfig, parseAddons } from "./utils";
 
 export interface CommandOptionDefinition {
     autoInclude?: boolean;
     defaultValues?: CommandResolver<string[]>;
     effect?: (command: Command) => any;
     flag?: boolean;
+    /** Set on options synthesized on the fly for an unrecognized `--name`; see `forwardUnknownOptions`. */
+    forwarded?: boolean;
     help?: CommandHelp;
     name: string;
     parse?: (values: Iterable<string>) => Iterable<string> | PromiseLike<Iterable<string>>;
@@ -92,9 +91,9 @@ CommandOption.register({
     name: "database",
     short: "d",
     flag: true,
-    defaultValues: async () => [await getOdooVersion()],
     help: [
         "Database(s) used when installing or updating modules. Providing a comma-separated list restrict access to databases provided in list",
+        "Defaults to this worktree's odoo.conf db_name, itself defaulting to the Odoo version",
     ],
 });
 
@@ -129,20 +128,15 @@ CommandOption.register({
 });
 
 CommandOption.register({
-    name: "addons-path",
-    flag: true,
-    defaultValues: Object.values(ADDON_PATHS),
-    help: [
-        "Comma-separated list of directories in which modules are stored. These directories are scanned for modules",
-    ],
-});
-
-CommandOption.register({
     name: "config",
     short: "c",
     flag: true,
+    defaultValues: async () => {
+        await ensureOdooConfig();
+        return [CONFIG_PATH];
+    },
     help: [
-        "Path to an alternate configuration file. If not defined, Odoo checks ODOO_RC environmental variable and default location $HOME/.odoorc",
+        "Path to an alternate configuration file. Defaults to this worktree's own odoo.conf (created with sensible defaults on first use if missing)",
     ],
 });
 
@@ -150,10 +144,8 @@ CommandOption.register({
     name: "community",
     standalone: true,
     effect(command) {
-        const pathOption = command.getOption("addons-path");
-        if (pathOption) {
-            pathOption.values = [ADDON_PATHS.community];
-        }
+        command.registerOption("addons-path", "long", []);
+        command.getOption("addons-path")!.values = [ADDON_PATHS.community];
     },
     help: [
         "Removes 'enterprise' from the addons-path, effectively running the database with community-only files",
@@ -168,36 +160,10 @@ CommandOption.register({
 });
 
 CommandOption.register({
-    name: "dev",
-    flag: true,
-    defaultValues: ["all"],
-    help: [
-        "Comma-separated list of features. Possible features are:",
-        [
-            `• ${brightYellow`all`}: alias for ${brightYellow`xml`} + ${brightYellow`reload`} + ${brightYellow`qweb`} + ${brightYellow`access`};`,
-            `• ${brightYellow`xml`}: read QWeb template from xml file directly instead of database;`,
-            `• ${brightYellow`reload`}: restart server when python file are updated (may not be detected depending on the text editor used);`,
-            `• ${brightYellow`qweb`}: break in the evaluation of QWeb template when a node contains t-debug='debugger';`,
-            `• ${brightYellow`werkzeug`}: display the full traceback on the frontend page in case of exception;`,
-            `• ${brightYellow`replica`}: simulate simulate a deployment with readonly replica;`,
-            `• ${brightYellow`access`}: log the traceback next to the AccessError when it results in a 403 - Forbidden HTTP response.`,
-        ],
-    ],
-});
-
-CommandOption.register({
-    name: "load-language",
-    short: "l",
-    flag: true,
-    help: ["Comma-separated list of languages for the translations that will be loaded"],
-});
-
-CommandOption.register({
     name: "http-port",
     short: "p",
     flag: true,
-    defaultValues: ["8069"],
-    help: ["Port on which the HTTP server listens, defaults to 8069"],
+    help: ["Port on which the HTTP server listens. Defaults to this worktree's odoo.conf http_port"],
 });
 
 CommandOption.register({

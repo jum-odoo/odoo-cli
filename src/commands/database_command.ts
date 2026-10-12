@@ -2,14 +2,15 @@ import { Command } from "../command";
 import { LOCAL_HOST } from "../constants";
 import { logger } from "../logger";
 import { $ } from "../process";
-import { startServer } from "../utils";
+import { getEffectiveHttpPort, startServer } from "../utils";
 
 Command.register({
     name: "database",
     alias: "db",
-    options: ["http-port"],
+    forwardUnknownOptions: true,
+    options: ["*"],
     async handler(...args) {
-        const [port] = this.getOptionValues("http-port");
+        const port = await getEffectiveHttpPort(this);
         await startServer(this, args);
         logger.info("Opening database manager.");
         await $`open ${LOCAL_HOST}:${port}/web/database/manager`;

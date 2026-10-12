@@ -4,7 +4,9 @@ import { Command } from "../command";
 import {
     ADDON_PATHS,
     COMMUNITY_PATH,
+    COMMUNITY_ROOT_PATH,
     ENTERPRISE_PATH,
+    ENTERPRISE_ROOT_PATH,
     MANIFEST_FILE_NAME,
     SRC_PATH,
 } from "../constants";
@@ -119,47 +121,69 @@ async function writeJsConfig(rootPath: string, source: string) {
     await writeFile(destination, JSON.stringify(config, null, 4), "utf-8");
 }
 
-async function _disable(rootPath: string) {
+// `rootPath` is the current (possibly version-worktree) directory. `installPath` is the true repo
+// checkout root, shared by every worktree of that repo.
+//
+// Only the actual node packages (node_modules, package.json, lock file) move to `installPath`:
+// bun/npm/ESLint's plugin & config resolution all walk up parent directories to find them, so a
+// single shared copy is enough and avoids the duplicate-`node_modules` plugin-resolution conflict
+// a per-worktree install causes (two physically different copies of the same plugin).
+//
+// Everything else stays at `rootPath` because it does NOT resolve by walking up: `jsconfig.json`'s
+// paths depend on this worktree's own nesting; `.eslintignore` is only ever read from ESLint's own
+// CWD, never inherited from a parent directory; and git's `core.hooksPath` is resolved against
+// each worktree's own top-level directory, so `.hooks` must physically exist in every worktree for
+// commits made there to run it. `.eslintrc.json` would technically cascade fine from a single
+// shared copy, but is kept alongside the other config for consistency.
+// Per-worktree cleanup only — leaves the shared node packages at `installPath` untouched, so a
+// `reload` (which tears down and rebuilds the per-worktree config when switching worktrees, or
+// after the templates change) never forces a reinstall of packages that haven't changed.
+async function _disableWorktree(rootPath: string) {
     // Disable git hooks
     await $`cd ${rootPath} && git config --unset core.hooksPath &2> /dev/null`;
 
-    // Remove all tooling files
     await Promise.all([
         remove(join(rootPath, ".eslintignore")),
         remove(join(rootPath, ".eslintrc.json")),
-        remove(join(rootPath, "package.json")),
-        remove(join(rootPath, jsLockFile)),
-        remove(join(rootPath, "node_modules"), { recursive: true }),
         remove(join(rootPath, "jsconfig.json")),
-        // Pre-commit hooks
         remove(join(rootPath, HOOKS_FOLDER), { recursive: true }),
     ]);
 }
 
-async function _enable(rootPath: string) {
-    // Copy tooling files
+// Tears down the shared node packages themselves — only meant for a full opt-out (`disable`), not
+// for `reload`, since every worktree of a repo shares this same install.
+async function _disableShared(installPath: string) {
     await Promise.all([
+        remove(join(installPath, "package.json")),
+        remove(join(installPath, jsLockFile)),
+        remove(join(installPath, "node_modules"), { recursive: true }),
+    ]);
+}
+
+async function _disable(rootPath: string, installPath: string) {
+    await Promise.all([_disableWorktree(rootPath), _disableShared(installPath)]);
+}
+
+async function _enable(rootPath: string, installPath: string) {
+    await Promise.all([
+        // Per-worktree config
         copy(join(TOOLING_PATH, "_eslintignore"), join(rootPath, ".eslintignore")),
         copy(join(TOOLING_PATH, "_eslintrc.json"), join(rootPath, ".eslintrc.json")),
-        copy(join(TOOLING_PATH, "_package.json"), join(rootPath, "package.json")),
-        writeJsConfig(rootPath, join(TOOLING_PATH, "_jsconfig.json")),
-        // Pre-commit hooks
         ensureDirectory(join(rootPath, HOOKS_FOLDER)).then(() =>
             copy(HOOKS_PATH, join(rootPath, HOOKS_FOLDER), { recursive: true })
         ),
+        // Shared node package manifest
+        copy(join(TOOLING_PATH, "_package.json"), join(installPath, "package.json")),
     ]);
+    await writeJsConfig(rootPath, join(TOOLING_PATH, "_jsconfig.json"));
 
     // Setup git hooks
     await $`cd ${rootPath} && git config core.hooksPath ${HOOKS_FOLDER} &2>/dev/null`;
 
-    // Install dependencies
-    const jsLockPath = join(rootPath, jsLockFile);
-    const lockFileExists = await fileExists(jsLockPath);
-    await $`cd ${rootPath} && ${jsRuntime} install`;
-    if (!lockFileExists) {
-        // Remove .lock file if it did not exist already, to avoid useless diff
-        await remove(jsLockPath);
-    }
+    // Install dependencies once, shared by every worktree. The lock file is left in place
+    // afterwards (not just the `node_modules` it produces) so a later `enable`/`reload` from
+    // another worktree reuses it instead of re-resolving/re-installing from scratch.
+    await $`cd ${installPath} && ${jsRuntime} install`;
 }
 
 const copy = catchMissingFile(cp);
@@ -215,18 +239,31 @@ Command.register({
         }
         switch (action) {
             case "disable": {
-                await Promise.all([_disable(COMMUNITY_PATH), _disable(ENTERPRISE_PATH)]);
+                await Promise.all([
+                    _disable(COMMUNITY_PATH, COMMUNITY_ROOT_PATH),
+                    _disable(ENTERPRISE_PATH, ENTERPRISE_ROOT_PATH),
+                ]);
                 logger.info("Tooling disabled.");
                 break;
             }
             case "enable": {
-                await Promise.all([_enable(COMMUNITY_PATH), _enable(ENTERPRISE_PATH)]);
+                await Promise.all([
+                    _enable(COMMUNITY_PATH, COMMUNITY_ROOT_PATH),
+                    _enable(ENTERPRISE_PATH, ENTERPRISE_ROOT_PATH),
+                ]);
                 logger.info("Tooling enabled.");
                 break;
             }
             default: {
-                await Promise.all([_disable(COMMUNITY_PATH), _disable(ENTERPRISE_PATH)]);
-                await Promise.all([_enable(COMMUNITY_PATH), _enable(ENTERPRISE_PATH)]);
+                // Only the per-worktree config is torn down and rebuilt here — the shared node
+                // packages at the install root are left alone (see `_disableWorktree`), so
+                // reloading tooling in a different worktree of the same repo doesn't force a
+                // reinstall of packages that haven't changed.
+                await Promise.all([_disableWorktree(COMMUNITY_PATH), _disableWorktree(ENTERPRISE_PATH)]);
+                await Promise.all([
+                    _enable(COMMUNITY_PATH, COMMUNITY_ROOT_PATH),
+                    _enable(ENTERPRISE_PATH, ENTERPRISE_ROOT_PATH),
+                ]);
                 logger.info("Tooling reloaded.");
                 break;
             }

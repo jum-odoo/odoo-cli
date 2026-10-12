@@ -1,4 +1,4 @@
-import { exec, spawn } from "child_process";
+import { exec, execFile, spawn } from "child_process";
 import { HIGHLIGHT, logger } from "./logger";
 import { and, plural } from "./utils";
 
@@ -68,6 +68,32 @@ export async function $(strings: TemplateStringsArray, ...values: unknown[]): Pr
                 resolve(stdout.trim());
             }
         });
+    });
+}
+
+/**
+ * Runs a Python script through `python3 -c` (no shell involved, so the script never needs
+ * shell-quoting) and returns its stdout. `env` is passed as-is (callers extend `process.env`
+ * themselves, e.g. to set `PYTHONPATH`).
+ */
+export async function evalPython(script: string, env: NodeJS.ProcessEnv): Promise<string> {
+    logger.debug(`${magenta`<python>`}`);
+    return new Promise((resolve, reject) => {
+        execFile(
+            "python3",
+            ["-c", script],
+            { env, maxBuffer: 16 * 1024 * 1024 },
+            (error, stdout, stderr) => {
+                if (error) {
+                    reject(error);
+                } else {
+                    if (stderr) {
+                        logger.debug(stderr);
+                    }
+                    resolve(stdout);
+                }
+            }
+        );
     });
 }
 
